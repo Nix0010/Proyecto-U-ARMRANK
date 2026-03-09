@@ -1,0 +1,13 @@
+{
+  "name": "tournament-app",
+  "version": "1.0.0",
+  "description": "Sistema de gestión de torneos con doble eliminación",
+  "scripts": {
+    "setup": "powershell -ExecutionPolicy Bypass -File setup-local.ps1",
+    "dev": "powershell -ExecutionPolicy Bypass -File start-dev.ps1",
+    "build": "cd app && npm run build",
+    "install:all": "cd backend && npm install && cd ../app && npm install"
+  },
+  "keywords": ["tournament", "bracket", "armwrestling", "sports"],
+  "private": true
+}

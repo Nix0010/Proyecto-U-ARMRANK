@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ARMRANK - Torneos de Pulso</title>
+    <meta name="description" content="ARMRANK — Sistema de gestión de torneos de Armwrestling con llaves de doble eliminación." />
+    <script>
+      // Aplicar tema inmediatamente para evitar flash
+      (function() {
+        const theme = localStorage.getItem('armrank-theme') || 'light';
+        const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const isDark = theme === 'dark' || (theme === 'system' && systemDark);
+        document.documentElement.classList.add(isDark ? 'dark' : 'light');
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-Bc5_Ihjc.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CfSzcpV8.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

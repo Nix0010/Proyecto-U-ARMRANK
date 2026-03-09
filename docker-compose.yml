@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: tournament-db
+    restart: always
+    environment:
+      POSTGRES_USER: tournament
+      POSTGRES_PASSWORD: tu_password_seguro_aqui
+      POSTGRES_DB: tournament_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - tournament-network
+
+  # Backend API (descomentar cuando esté listo para producción)
+  # backend:
+  #   build: ./backend
+  #   container_name: tournament-api
+  #   restart: always
+  #   environment:
+  #     DATABASE_URL: postgresql://tournament:tu_password_seguro_aqui@postgres:5432/tournament_db
+  #     NODE_ENV: production
+  #     PORT: 3001
+  #   ports:
+  #     - "3001:3001"
+  #   depends_on:
+  #     - postgres
+  #   networks:
+  #     - tournament-network
+
+volumes:
+  postgres_data:
+
+networks:
+  tournament-network:
+    driver: bridge
