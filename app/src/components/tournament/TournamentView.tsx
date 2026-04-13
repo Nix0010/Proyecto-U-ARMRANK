@@ -246,7 +246,7 @@ export function TournamentView({ tournament, onBack }: TournamentViewProps) {
 
   // Fetch ranking when switching to ranking tab
   useEffect(() => {
-    if (activeTab === 'ranking' && tournament.status === 'in_progress' || activeTab === 'ranking') {
+    if (activeTab === 'ranking') {
       fetchRanking(tournament.id);
     }
   }, [activeTab, tournament.id, fetchRanking, tournament.status]);
@@ -285,7 +285,7 @@ export function TournamentView({ tournament, onBack }: TournamentViewProps) {
           await fetchTournament(tournament.id);
           setActiveTab('overview');
           toast.success('Llaves reiniciadas');
-        } catch (error) {
+        } catch {
           toast.error('Error al reiniciar');
         }
       },
@@ -314,12 +314,12 @@ export function TournamentView({ tournament, onBack }: TournamentViewProps) {
           await fetchTournament(tournament.id);
           setActiveTab('bracket');
           toast.success('¡Torneo iniciado!', { icon: '🏆' });
-        } catch (error) {
+        } catch {
           toast.error('Error al iniciar torneo');
         }
       },
     });
-  }, [updateTournament, generateBracket, tournament.id, tournament.participants.length]);
+  }, [updateTournament, generateBracket, fetchTournament, tournament.id, tournament.participants.length]);
 
   const handleUpdateMatch = useCallback(async (matchId: string, winnerId: string, score1?: number, score2?: number, resultType?: string) => {
     try {
@@ -335,7 +335,7 @@ export function TournamentView({ tournament, onBack }: TournamentViewProps) {
           description: score1 !== undefined && score2 !== undefined ? `Marcador: ${score1} - ${score2}` : undefined,
         });
       }
-    } catch (error) {
+    } catch {
       toast.error('Error al actualizar partido');
     }
   }, [advanceMatch, tournament.id, tournament.matches, tournament.participants]);
@@ -345,10 +345,11 @@ export function TournamentView({ tournament, onBack }: TournamentViewProps) {
   }, [exportToPDF, tournament]);
 
   const handleCopyLink = useCallback(() => {
-    navigator.clipboard.writeText(window.location.href)
-      .then(() => toast.success('Enlace copiado al portapapeles'))
+    const pubLink = `${window.location.origin}/?tournament=${tournament.id}`;
+    navigator.clipboard.writeText(pubLink)
+      .then(() => toast.success('Enlace público copiado al portapapeles'))
       .catch(() => toast.error('No se pudo copiar el enlace'));
-  }, []);
+  }, [tournament.id]);
 
   const handleCloseConfirmDialog = useCallback((open: boolean) => {
     setConfirmDialog(prev => ({ ...prev, open }));
@@ -551,6 +552,7 @@ export function TournamentView({ tournament, onBack }: TournamentViewProps) {
           <ParticipantManager
             tournamentId={tournament.id}
             participants={tournament.participants}
+            categories={tournamentCategories}
             maxParticipants={tournament.maxParticipants}
             canEdit={canEdit && tournament.status !== 'in_progress'}
           />
@@ -641,3 +643,5 @@ export function TournamentView({ tournament, onBack }: TournamentViewProps) {
     </div>
   );
 }
+
+

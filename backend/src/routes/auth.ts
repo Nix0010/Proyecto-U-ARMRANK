@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { registerUser, loginUser, getUserById } from '../services/authService';
+import { registerUser, loginUser, getUserById, loginWithGoogle } from '../services/authService';
 import { requireAuth } from '../middlewares/auth';
 import { asyncHandler } from '../middlewares/errorHandler';
 import { prisma } from '../db';
@@ -41,6 +41,21 @@ router.post(
         const { email, password } = loginSchema.parse(req.body);
         const { user, token } = await loginUser(email, password);
         res.json({ user, token });
+    })
+);
+
+// ─── POST /api/auth/google ────────────────────────────────────────────────────
+
+const googleSchema = z.object({
+    credential: z.string().min(1, 'Token requerido'),
+});
+
+router.post(
+    '/google',
+    asyncHandler(async (req, res) => {
+        const { credential } = googleSchema.parse(req.body);
+        const { user, token } = await loginWithGoogle(credential);
+        res.status(200).json({ user, token });
     })
 );
 

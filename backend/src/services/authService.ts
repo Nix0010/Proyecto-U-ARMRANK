@@ -1,6 +1,9 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { OAuth2Client } from 'google-auth-library';
 import { prisma } from '../db';
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'armrank_dev_secret_change_in_production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
@@ -52,6 +55,11 @@ export interface RegisterInput {
 }
 
 export async function registerUser(input: RegisterInput): Promise<{ user: AuthUser; token: string }> {
+    const config = await prisma.systemConfig.findUnique({ where: { id: 'global' } });
+    if (config && !config.registrationsEnabled) {
+        throw Object.assign(new Error('Los registros están temporalmente deshabilitados'), { status: 403 });
+    }
+
     const existing = await prisma.user.findUnique({ where: { email: input.email } });
     if (existing) {
         throw Object.assign(new Error('El email ya está registrado'), { status: 409 });
@@ -95,6 +103,56 @@ export async function getUserById(userId: string): Promise<AuthUser | null> {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return null;
     return toAuthUser(user);
+}
+
+export async function loginWithGoogle(idToken: string): Promise<{ user: AuthUser; token: string }> {
+    if (!process.env.GOOGLE_CLIENT_ID) {
+        throw Object.assign(new Error('Configuración de Google no encontrada en el servidor'), { status: 500 });
+    }
+
+    const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email) {
+        throw Object.assign(new Error('Token de Google inválido'), { status: 401 });
+    }
+
+    const { email, name, picture, sub: googleId } = payload;
+
+    let user = await prisma.user.findUnique({ where: { email } });
+
+    if (!user) {
+        const config = await prisma.systemConfig.findUnique({ where: { id: 'global' } });
+        if (config && !config.registrationsEnabled) {
+            throw Object.assign(new Error('Los registros están temporalmente deshabilitados'), { status: 403 });
+        }
+
+        // Register automatically
+        user = await prisma.user.create({
+            data: {
+                email,
+                name: name || 'Usuario de Google',
+                avatar: picture,
+                googleId,
+            },
+        });
+    } else if (!user.googleId) {
+        // Link googleId to existing account
+        user = await prisma.user.update({
+            where: { id: user.id },
+            data: { googleId, avatar: user.avatar || picture },
+        });
+    }
+
+    if (!user.active) {
+        throw Object.assign(new Error('Cuenta suspendida'), { status: 403 });
+    }
+
+    const token = signToken({ userId: user.id, email: user.email, role: user.role });
+    return { user: toAuthUser(user), token };
 }
 
 function toAuthUser(user: { id: string; name: string; email: string; role: string; avatar: string | null; country: string | null; team: string | null }): AuthUser {

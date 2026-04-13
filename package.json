@@ -8,6 +8,14 @@
     "build": "cd app && npm run build",
     "install:all": "cd backend && npm install && cd ../app && npm install"
   },
-  "keywords": ["tournament", "bracket", "armwrestling", "sports"],
-  "private": true
+  "keywords": [
+    "tournament",
+    "bracket",
+    "armwrestling",
+    "sports"
+  ],
+  "private": true,
+  "devDependencies": {
+    "docx": "^9.6.0"
+  }
 }

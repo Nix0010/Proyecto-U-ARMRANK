@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 import tournamentRoutes from './routes/tournaments';
 import categoryRoutes from './routes/categories';
 import authRoutes from './routes/auth';
+import adminRoutes from './routes/admin';
+import rankingsRoutes from './routes/rankings';
 import { prisma } from './db';
 import { globalErrorHandler } from './middlewares/errorHandler';
 
@@ -60,6 +62,12 @@ app.use('/api/tournaments', tournamentRoutes);
 
 // Category management (nested under tournament)
 app.use('/api/tournaments/:tournamentId/categories', categoryRoutes);
+
+// Admin dashboard and management
+app.use('/api/admin', adminRoutes);
+
+// Global Rankings
+app.use('/api/rankings', rankingsRoutes);
 
 // ─── Error Handler (MUST be last) ─────────────────────────────────────────────
 

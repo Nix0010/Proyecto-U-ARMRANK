@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { Swords, Loader2, Mail, Lock, User, Globe, Users } from 'lucide-react';
+import { GoogleLogin } from '@react-oauth/google';
 
 type Tab = 'login' | 'register';
 
@@ -16,7 +17,20 @@ interface Props {
 export function AuthPage({ defaultTab = 'login' }: Props) {
     const [tab, setTab] = useState<Tab>(defaultTab);
     const [loading, setLoading] = useState(false);
-    const { login, register } = useAuth();
+    const { login, loginWithGoogle, register } = useAuth();
+
+    const handleGoogleSuccess = async (credentialResponse: any) => {
+        if (!credentialResponse.credential) return;
+        setLoading(true);
+        try {
+            await loginWithGoogle(credentialResponse.credential);
+            toast.success('¡Bienvenido!');
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Error al conectar con Google');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     // ── Login form ──
     const [loginForm, setLoginForm] = useState({ email: '', password: '' });
@@ -134,6 +148,22 @@ export function AuthPage({ defaultTab = 'login' }: Props) {
                                     {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                                     {loading ? 'Ingresando...' : 'Iniciar Sesión'}
                                 </Button>
+                                
+                                <div className="relative my-4">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <div className="w-full border-t"></div>
+                                    </div>
+                                    <div className="relative flex justify-center text-xs uppercase">
+                                        <span className="bg-card px-2 text-muted-foreground">O continúa con</span>
+                                    </div>
+                                </div>
+                                <div className="flex justify-center -translate-y-1">
+                                    <GoogleLogin
+                                        onSuccess={handleGoogleSuccess}
+                                        onError={() => toast.error('Falló la conexión con Google')}
+                                        useOneTap
+                                    />
+                                </div>
                             </form>
                         ) : (
                             <form onSubmit={handleRegister} className="space-y-4">
@@ -213,6 +243,21 @@ export function AuthPage({ defaultTab = 'login' }: Props) {
                                     {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                                     {loading ? 'Creando cuenta...' : 'Crear Cuenta'}
                                 </Button>
+                                
+                                <div className="relative my-4">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <div className="w-full border-t"></div>
+                                    </div>
+                                    <div className="relative flex justify-center text-xs uppercase">
+                                        <span className="bg-card px-2 text-muted-foreground">O registrate con</span>
+                                    </div>
+                                </div>
+                                <div className="flex justify-center -translate-y-1">
+                                    <GoogleLogin
+                                        onSuccess={handleGoogleSuccess}
+                                        onError={() => toast.error('Falló la conexión con Google')}
+                                    />
+                                </div>
                             </form>
                         )}
                     </CardContent>

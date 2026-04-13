@@ -445,3 +445,4 @@ export function generateBracket(
             return generateDoubleElimination(participants, tournamentId, categoryId, bestOf);
     }
 }
+

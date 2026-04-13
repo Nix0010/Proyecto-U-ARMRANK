@@ -52,6 +52,8 @@ model Tournament {
   createdById  String?
   createdBy    User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
+  isPublic     Boolean @default(true) // Publicly visible without login
+
   participants Participant[]
   matches      Match[]
   categories   Category[]
@@ -158,4 +160,15 @@ model Match {
   category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   @@map("matches")
+}
+
+// ─── System Configuration ─────────────────────────────────────────────────────
+
+model SystemConfig {
+  id                  String   @id @default("global") // We only need one global config
+  registrationsEnabled Boolean  @default(true)
+  maintenanceMode     Boolean  @default(false)
+  updatedAt           DateTime @updatedAt
+
+  @@map("system_config")
 }

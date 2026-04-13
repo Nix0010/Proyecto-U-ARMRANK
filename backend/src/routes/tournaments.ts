@@ -1,61 +1,127 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
 import { generateBracket } from '../services/bracketService';
+import { requireAuth, optionalAuth } from '../middlewares/auth';
+import { asyncHandler } from '../middlewares/errorHandler';
 
 const router = Router();
 
-// ─── Validation Schemas ───────────────────────────────────────────────────────
-
 const createTournamentSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-  sport: z.string().default('armwrestling'),
+  name: z.string().trim().min(1, 'El nombre es obligatorio'),
+  description: z.string().trim().optional(),
+  sport: z.string().trim().default('armwrestling'),
   type: z.enum(['single_elimination', 'double_elimination', 'round_robin', 'vendetta']).default('double_elimination'),
-  maxParticipants: z.number().min(2).max(256).default(16),
-  location: z.string().optional(),
-  organizerName: z.string().optional(),
+  maxParticipants: z.number().int().min(2).max(256).default(16),
+  location: z.string().trim().optional(),
+  organizerName: z.string().trim().optional(),
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
-  bestOf: z.number().int().refine(v => [1, 3, 5, 7].includes(v)).default(1),
+  bestOf: z.number().int().refine((value) => [1, 3, 5, 7].includes(value)).default(1),
 });
 
 const updateTournamentSchema = z.object({
-  name: z.string().min(1).optional(),
-  description: z.string().optional(),
+  name: z.string().trim().min(1).optional(),
+  description: z.string().trim().optional(),
   status: z.enum(['draft', 'registration', 'in_progress', 'completed', 'cancelled']).optional(),
-  sport: z.string().optional(),
+  sport: z.string().trim().optional(),
   type: z.enum(['single_elimination', 'double_elimination', 'round_robin', 'vendetta']).optional(),
-  maxParticipants: z.number().min(2).max(256).optional(),
-  location: z.string().optional(),
-  organizerName: z.string().optional(),
+  maxParticipants: z.number().int().min(2).max(256).optional(),
+  location: z.string().trim().optional(),
+  organizerName: z.string().trim().optional(),
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
-  bestOf: z.number().int().refine(v => [1, 3, 5, 7].includes(v)).optional(),
+  bestOf: z.number().int().refine((value) => [1, 3, 5, 7].includes(value)).optional(),
 });
+
+const nullableString = z.union([z.string(), z.literal(''), z.null(), z.undefined()])
+  .optional()
+  .transform((value) => value && value.trim() !== '' ? value.trim() : null);
 
 const participantSchema = z.object({
-  name: z.string().min(1, 'El nombre es obligatorio'),
-  // 'email' field is used as Ciudad/Club in the UI — accept any string value
-  email: z.union([z.string(), z.null(), z.undefined()])
-    .optional()
-    .transform(val => (val === '' ? null : val)),
-  phone: z.union([z.string(), z.literal(''), z.null(), z.undefined()]).optional().transform(val => val === '' ? null : val),
-  avatar: z.union([z.string(), z.literal(''), z.null(), z.undefined()]).optional().transform(val => val === '' ? null : val),
-  seed: z.union([z.number(), z.null(), z.undefined()]).optional(),
-  team: z.union([z.string(), z.literal(''), z.null(), z.undefined()]).optional().transform(val => val === '' ? null : val),
-  country: z.union([z.string(), z.literal(''), z.null(), z.undefined()]).optional().transform(val => val === '' ? null : val),
+  name: z.string().trim().min(1, 'El nombre es obligatorio'),
+  email: nullableString,
+  phone: nullableString,
+  avatar: nullableString,
+  seed: z.union([z.number().int(), z.null(), z.undefined()]).optional(),
+  team: nullableString,
+  country: nullableString,
   weight: z.union([z.number(), z.null(), z.undefined()]).optional(),
   categoryId: z.union([z.string(), z.null(), z.undefined()]).optional(),
-  category: z.union([z.string(), z.literal(''), z.null(), z.undefined()]).optional().transform(val => val === '' ? null : val),
+  category: nullableString,
 });
 
-// ─── Tournament Routes ────────────────────────────────────────────────────────
+const matchResultSchema = z.object({
+  winnerId: z.string().min(1, 'Debes indicar un ganador'),
+  score1: z.number().optional().nullable(),
+  score2: z.number().optional().nullable(),
+  resultType: nullableString,
+  arm: nullableString,
+  seriesResults: z.unknown().optional(),
+});
 
-// GET /api/tournaments - Listar todos los torneos
-router.get('/', async (req, res) => {
+const formatZodError = (error: z.ZodError) => error.errors.map((issue) => {
+  const path = issue.path.length > 0 ? issue.path.join('.') : 'dato';
+  return `${path}: ${issue.message}`;
+}).join('; ');
+
+const getTournamentWithRelations = (id: string) => prisma.tournament.findUnique({
+  where: { id },
+  include: {
+    categories: { orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] },
+    participants: {
+      include: { stats: true, category: true },
+      orderBy: [{ seed: 'asc' }, { createdAt: 'asc' }],
+    },
+    matches: {
+      orderBy: [{ bracket: 'asc' }, { round: 'asc' }, { position: 'asc' }],
+    },
+  },
+});
+
+async function resolveCategoryId(tournamentId: string, categoryId?: string | null, categoryName?: string | null) {
+  if (categoryId) {
+    const category = await prisma.category.findFirst({ where: { id: categoryId, tournamentId } });
+    if (!category) {
+      throw new Error('La categoria seleccionada no pertenece a este torneo');
+    }
+    return category.id;
+  }
+
+  if (!categoryName) {
+    return null;
+  }
+
+  const category = await prisma.category.findFirst({
+    where: {
+      tournamentId,
+      name: { equals: categoryName, mode: 'insensitive' },
+    },
+  });
+
+  return category?.id ?? null;
+}
+
+router.get('/', optionalAuth, async (req, res) => {
   try {
+    const whereClause: any = { isPublic: true }; // Default for guests
+
+    if (req.user) {
+      if (req.user.role === 'admin') {
+        // Admins see everything
+        delete whereClause.isPublic;
+      } else {
+        // Users see public ones OR their own
+        whereClause.OR = [
+          { isPublic: true },
+          { createdById: req.user.userId }
+        ];
+        delete whereClause.isPublic;
+      }
+    }
+
     const tournaments = await prisma.tournament.findMany({
+      where: whereClause,
       include: {
         _count: { select: { participants: true, matches: true, categories: true } },
       },
@@ -63,173 +129,251 @@ router.get('/', async (req, res) => {
     });
     res.json(tournaments);
   } catch (error) {
+    console.error('[GET /tournaments]', error);
     res.status(500).json({ error: 'Error al obtener torneos' });
   }
 });
 
-// GET /api/tournaments/:id - Obtener un torneo con todos sus datos
-router.get('/:id', async (req, res) => {
-  try {
+// ─── GET /api/tournaments/:id/public ──────────────────────────────────────────
+
+router.get(
+  '/:id/public',
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
     const tournament = await prisma.tournament.findUnique({
-      where: { id: req.params.id },
+      where: { id },
       include: {
-        categories: { orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] },
+        categories: {
+          include: {
+            participants: {
+              include: { stats: true },
+            },
+          },
+        },
         participants: {
-          include: { stats: true, category: true },
-          orderBy: { seed: 'asc' },
+          include: { stats: true },
         },
-        matches: {
-          orderBy: [
-            { bracket: 'asc' },
-            { round: 'asc' },
-            { position: 'asc' },
-          ],
-        },
+        matches: true,
       },
     });
+
     if (!tournament) {
       return res.status(404).json({ error: 'Torneo no encontrado' });
     }
+
+    if (!(tournament as any).isPublic) {
+      return res.status(403).json({ error: 'Este torneo es privado' });
+    }
+
     res.json(tournament);
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener torneo' });
+  })
+);
+
+// ─── GET /api/tournaments/:id ─────────────────────────────────────────────────
+
+router.get('/:id', optionalAuth, async (req, res) => {
+  try {
+    const tournament = await getTournamentWithRelations(req.params.id);
+    if (!tournament) {
+      return res.status(404).json({ error: 'Torneo no encontrado' });
+    }
+
+    if (!tournament.isPublic) {
+      const isOwner = req.user?.userId === tournament.createdById;
+      const isAdmin = req.user?.role === 'admin';
+      
+      if (!isOwner && !isAdmin) {
+        return res.status(403).json({ error: 'No tienes permiso para ver este torneo' });
+      }
+    }
+
+    return res.json(tournament);
+  } catch {
+    return res.status(500).json({ error: 'Error al obtener torneo' });
   }
 });
 
-// POST /api/tournaments - Crear torneo
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const data = createTournamentSchema.parse(req.body);
     const tournament = await prisma.tournament.create({
       data: {
-        name: data.name,
-        description: data.description,
-        sport: data.sport,
-        type: data.type,
-        maxParticipants: data.maxParticipants,
-        bestOf: data.bestOf,
-        location: data.location,
-        organizerName: data.organizerName,
-        startDate: data.startDate ? new Date(data.startDate) : undefined,
-        endDate: data.endDate ? new Date(data.endDate) : undefined,
-      },
-    });
-    res.status(201).json(tournament);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Datos inválidos', details: error.errors });
-    }
-    res.status(500).json({ error: 'Error al crear torneo' });
-  }
-});
-
-// PATCH /api/tournaments/:id - Actualizar torneo
-router.patch('/:id', async (req, res) => {
-  try {
-    const data = updateTournamentSchema.parse(req.body);
-
-    // If reverting to draft, clean up matches and reset participant stats
-    if (data.status === 'draft') {
-      const tournamentId = req.params.id;
-      await prisma.match.deleteMany({ where: { tournamentId } });
-      const participants = await prisma.participant.findMany({
-        where: { tournamentId }, select: { id: true },
-      });
-      if (participants.length > 0) {
-        await prisma.participantStats.updateMany({
-          where: { participantId: { in: participants.map(p => p.id) } },
-          data: { wins: 0, losses: 0, draws: 0, pointsFor: 0, pointsAgainst: 0, matchesPlayed: 0, rank: null },
-        });
-      }
-    }
-
-    const tournament = await prisma.tournament.update({
-      where: { id: req.params.id },
-      data: {
         ...data,
         startDate: data.startDate ? new Date(data.startDate) : undefined,
         endDate: data.endDate ? new Date(data.endDate) : undefined,
+        sport: data.sport.toLowerCase(),
+        createdById: req.user!.userId, // Enforce ownership
       },
     });
-    res.json(tournament);
+
+    return res.status(201).json(tournament);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Datos inválidos', details: error.errors });
+      return res.status(400).json({ error: formatZodError(error), details: error.errors });
     }
-    res.status(500).json({ error: 'Error al actualizar torneo' });
+    return res.status(500).json({ error: 'Error al crear torneo' });
   }
 });
 
-// DELETE /api/tournaments/:id - Eliminar torneo
-router.delete('/:id', async (req, res) => {
+router.patch('/:id', requireAuth, async (req, res) => {
   try {
-    await prisma.tournament.delete({
-      where: { id: req.params.id },
+    const data = updateTournamentSchema.parse(req.body);
+    const tournamentId = req.params.id;
+
+    const existing = await prisma.tournament.findUnique({ where: { id: tournamentId } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Torneo no encontrado' });
+    }
+
+    const isAdmin = req.user!.role === 'admin';
+    const isOwner = existing.createdById === req.user!.userId;
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ error: 'No tienes permisos para modificar este torneo' });
+    }
+
+    if (data.maxParticipants && data.maxParticipants < existing.currentParticipants) {
+      return res.status(400).json({ error: 'El cupo maximo no puede ser menor al numero actual de participantes' });
+    }
+
+    if (data.status === 'draft') {
+      await prisma.$transaction(async (tx) => {
+        await tx.match.deleteMany({ where: { tournamentId } });
+        const participants = await tx.participant.findMany({ where: { tournamentId }, select: { id: true } });
+        if (participants.length > 0) {
+          await tx.participantStats.updateMany({
+            where: { participantId: { in: participants.map((participant) => participant.id) } },
+            data: { wins: 0, losses: 0, draws: 0, pointsFor: 0, pointsAgainst: 0, matchesPlayed: 0, rank: null },
+          });
+        }
+      });
+    }
+
+    const tournament = await prisma.tournament.update({
+      where: { id: tournamentId },
+      data: {
+        ...data,
+        sport: data.sport?.toLowerCase(),
+        startDate: data.startDate ? new Date(data.startDate) : undefined,
+        endDate: data.endDate ? new Date(data.endDate) : undefined,
+      },
     });
-    res.json({ message: 'Torneo eliminado' });
+
+    return res.json(tournament);
   } catch (error) {
-    res.status(500).json({ error: 'Error al eliminar torneo' });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: formatZodError(error), details: error.errors });
+    }
+    return res.status(500).json({ error: 'Error al actualizar torneo' });
   }
 });
 
-// ─── Participant Routes ───────────────────────────────────────────────────────
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const existing = await prisma.tournament.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Torneo no encontrado' });
 
-// POST /api/tournaments/:id/participants - Agregar participante
-router.post('/:id/participants', async (req, res) => {
+    const isAdmin = req.user!.role === 'admin';
+    const isOwner = existing.createdById === req.user!.userId;
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ error: 'No tienes permisos para eliminar este torneo' });
+    }
+
+    await prisma.tournament.delete({ where: { id: req.params.id } });
+    return res.json({ message: 'Torneo eliminado' });
+  } catch {
+    return res.status(500).json({ error: 'Error al eliminar torneo' });
+  }
+});
+
+router.post('/:id/participants', requireAuth, async (req, res) => {
   try {
     const data = participantSchema.parse(req.body);
     const tournamentId = req.params.id;
 
     const tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
-      include: { participants: true },
+      include: { participants: { select: { id: true, seed: true } } },
     });
 
-    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+    if (!tournament) {
+      return res.status(404).json({ error: 'Torneo no encontrado' });
+    }
+
+    const isAdmin = req.user!.role === 'admin';
+    const isOwner = tournament.createdById === req.user!.userId;
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ error: 'No tienes permisos para agregar participantes' });
+    }
+
     if (tournament.participants.length >= tournament.maxParticipants) {
       return res.status(400).json({ error: 'Torneo lleno' });
     }
 
-    const seed = data.seed ?? tournament.participants.length + 1;
+    const nextSeed = Math.max(0, ...tournament.participants.map((participant) => participant.seed ?? 0)) + 1;
+    const resolvedCategoryId = await resolveCategoryId(tournamentId, data.categoryId, data.category);
 
-    const participant = await prisma.participant.create({
-      data: {
-        name: data.name,
-        email: data.email,
-        phone: data.phone,
-        avatar: data.avatar,
-        seed,
-        team: data.team,
-        country: data.country,
-        weight: data.weight,
-        categoryId: data.categoryId || null,
-        tournamentId,
-        stats: { create: { wins: 0, losses: 0, draws: 0, pointsFor: 0, pointsAgainst: 0, matchesPlayed: 0 } },
-      },
-      include: { stats: true, category: true },
+    const participant = await prisma.$transaction(async (tx) => {
+      const created = await tx.participant.create({
+        data: {
+          name: data.name,
+          email: data.email,
+          phone: data.phone,
+          avatar: data.avatar,
+          seed: data.seed ?? nextSeed,
+          team: data.team,
+          country: data.country,
+          weight: data.weight,
+          categoryId: resolvedCategoryId,
+          tournamentId,
+          stats: {
+            create: { wins: 0, losses: 0, draws: 0, pointsFor: 0, pointsAgainst: 0, matchesPlayed: 0 },
+          },
+        },
+        include: { stats: true, category: true },
+      });
+
+      await tx.tournament.update({
+        where: { id: tournamentId },
+        data: { currentParticipants: { increment: 1 } },
+      });
+
+      return created;
     });
 
-    await prisma.tournament.update({
-      where: { id: tournamentId },
-      data: { currentParticipants: { increment: 1 } },
-    });
-
-    res.status(201).json(participant);
+    return res.status(201).json(participant);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const issues = error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join('; ');
-      return res.status(400).json({ error: `Datos inválidos: ${issues}`, details: error.errors });
+      return res.status(400).json({ error: formatZodError(error), details: error.errors });
     }
-    res.status(500).json({ error: 'Error al agregar participante' });
+    return res.status(400).json({ error: error instanceof Error ? error.message : 'Error al agregar participante' });
   }
 });
 
-// PATCH /api/tournaments/:id/participants/:participantId - Actualizar participante
-router.patch('/:id/participants/:participantId', async (req, res) => {
+router.patch('/:id/participants/:participantId', requireAuth, async (req, res) => {
   try {
     const data = participantSchema.partial().parse(req.body);
-    const participant = await prisma.participant.update({
-      where: { id: req.params.participantId },
+    const tournamentId = req.params.id;
+    const participantId = req.params.participantId;
+
+    const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId } });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const isAdmin = req.user!.role === 'admin';
+    const isOwner = tournament.createdById === req.user!.userId;
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ error: 'No tienes permisos para modificar participantes' });
+    }
+
+    const participant = await prisma.participant.findFirst({ where: { id: participantId, tournamentId } });
+    if (!participant) {
+      return res.status(404).json({ error: 'Participante no encontrado' });
+    }
+
+    const resolvedCategoryId = await resolveCategoryId(tournamentId, data.categoryId, data.category);
+
+    const updated = await prisma.participant.update({
+      where: { id: participantId },
       data: {
         name: data.name,
         email: data.email,
@@ -239,295 +383,253 @@ router.patch('/:id/participants/:participantId', async (req, res) => {
         team: data.team,
         country: data.country,
         weight: data.weight,
-        categoryId: data.categoryId || null,
+        categoryId: resolvedCategoryId,
       },
       include: { stats: true, category: true },
     });
-    res.json(participant);
+
+    return res.json(updated);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Datos inválidos', details: error.errors });
+      return res.status(400).json({ error: formatZodError(error), details: error.errors });
     }
-    res.status(500).json({ error: 'Error al actualizar participante' });
+    return res.status(400).json({ error: error instanceof Error ? error.message : 'Error al actualizar participante' });
   }
 });
 
-// DELETE /api/tournaments/:id/participants/:participantId - Eliminar participante
-router.delete('/:id/participants/:participantId', async (req, res) => {
-  try {
-    await prisma.participant.delete({
-      where: { id: req.params.participantId },
-    });
-
-    await prisma.tournament.update({
-      where: { id: req.params.id },
-      data: { currentParticipants: { decrement: 1 } },
-    });
-
-    res.json({ message: 'Participante eliminado' });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al eliminar participante' });
-  }
-});
-
-// ─── Bracket Generation ───────────────────────────────────────────────────────
-
-// POST /api/tournaments/:id/generate-bracket
-// Delegates to bracketService.ts — single source of truth for all bracket logic
-router.post('/:id/generate-bracket', async (req, res) => {
+router.delete('/:id/participants/:participantId', requireAuth, async (req, res) => {
   try {
     const tournamentId = req.params.id;
+    const participantId = req.params.participantId;
 
+    const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId } });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const isAdmin = req.user!.role === 'admin';
+    const isOwner = tournament.createdById === req.user!.userId;
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ error: 'No tienes permisos para eliminar participantes' });
+    }
+
+    const participant = await prisma.participant.findFirst({ where: { id: participantId, tournamentId } });
+    if (!participant) {
+      return res.status(404).json({ error: 'Participante no encontrado' });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.participant.delete({ where: { id: participantId } });
+      await tx.tournament.update({
+        where: { id: tournamentId },
+        data: { currentParticipants: { decrement: 1 } },
+      });
+    });
+
+    return res.json({ message: 'Participante eliminado' });
+  } catch {
+    return res.status(500).json({ error: 'Error al eliminar participante' });
+  }
+});
+
+router.post('/:id/generate-bracket', requireAuth, async (req, res) => {
+  try {
+    const tournamentId = req.params.id;
     const tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
       include: { participants: { include: { category: true } } },
     });
 
     if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
+
+    const isAdmin = req.user!.role === 'admin';
+    const isOwner = tournament.createdById === req.user!.userId;
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ error: 'No tienes permisos para generar llaves' });
+    }
+
     if (tournament.participants.length < 2) {
       return res.status(400).json({ error: 'Se necesitan al menos 2 participantes' });
     }
 
-    // Delete existing matches before generating new bracket
     await prisma.match.deleteMany({ where: { tournamentId } });
 
-    const bestOf = tournament.bestOf ?? 1;
-    const type = tournament.type ?? 'double_elimination';
-
-    // Group participants by category (or a single group if no categories)
     const byCategory = new Map<string, typeof tournament.participants>();
-    for (const p of tournament.participants) {
-      const key = p.categoryId ?? '__none__';
+    for (const participant of tournament.participants) {
+      const key = participant.categoryId ?? '__none__';
       if (!byCategory.has(key)) byCategory.set(key, []);
-      byCategory.get(key)!.push(p);
-    }
-    // Fallback: if all participants have no category, treat as single group
-    if (byCategory.size === 0) {
-      byCategory.set('__none__', tournament.participants);
+      byCategory.get(key)?.push(participant);
     }
 
-    let allMatches: any[] = [];
+    let allMatches: ReturnType<typeof generateBracket>['matches'] = [];
+    const type = tournament.type ?? 'double_elimination';
+    const bestOf = tournament.bestOf ?? 1;
 
-    for (const [catKey, catPs] of byCategory.entries()) {
-      if (catPs.length < 2) continue; // Skip categories with only 1 participant
-      const catId = catKey === '__none__' ? null : catKey;
-
-      // generateBracket handles all types: single_elimination, double_elimination, round_robin, vendetta
-      const result = generateBracket(type, catPs, tournamentId, catId, bestOf);
+    for (const [categoryKey, participants] of byCategory.entries()) {
+      if (participants.length < 2) continue;
+      const categoryId = categoryKey === '__none__' ? null : categoryKey;
+      const result = generateBracket(type, participants, tournamentId, categoryId, bestOf);
       allMatches = allMatches.concat(result.matches);
     }
 
     if (allMatches.length === 0) {
-      return res.status(400).json({
-        error: 'No se puede generar el bracket. Necesitas al menos 2 participantes en la misma categoría.',
-      });
+      return res.status(400).json({ error: 'No se puede generar el bracket. Debe haber al menos 2 participantes en la misma categoria.' });
     }
 
-    // Persist all matches in a single batch
     await prisma.match.createMany({
-      data: allMatches.map(m => ({
-        id: m.id,
-        tournamentId: m.tournamentId,
-        round: m.round,
-        position: m.position,
-        bracket: m.bracket,
-        status: m.status,
-        participant1Id: m.participant1Id ?? null,
-        participant2Id: m.participant2Id ?? null,
-        winnerId: m.winnerId ?? null,
-        loserId: m.loserId ?? null,
-        score1: m.score1 ?? null,
-        score2: m.score2 ?? null,
-        nextMatchId: m.nextMatchId ?? null,
-        nextMatchSlot: m.nextMatchSlot ?? null,
-        loserMatchId: m.loserMatchId ?? null,
-        loserMatchSlot: m.loserMatchSlot ?? null,
-        categoryId: m.categoryId ?? null,
-        arm: m.arm ?? null,
-        bestOf: m.bestOf ?? 1,
+      data: allMatches.map((match) => ({
+        id: match.id,
+        tournamentId: match.tournamentId,
+        round: match.round,
+        position: match.position,
+        bracket: match.bracket,
+        status: match.status,
+        participant1Id: match.participant1Id ?? null,
+        participant2Id: match.participant2Id ?? null,
+        winnerId: match.winnerId ?? null,
+        loserId: match.loserId ?? null,
+        score1: match.score1 ?? null,
+        score2: match.score2 ?? null,
+        nextMatchId: match.nextMatchId ?? null,
+        nextMatchSlot: match.nextMatchSlot ?? null,
+        loserMatchId: match.loserMatchId ?? null,
+        loserMatchSlot: match.loserMatchSlot ?? null,
+        categoryId: match.categoryId ?? null,
+        arm: match.arm ?? null,
+        bestOf: match.bestOf ?? 1,
         resultType: null,
         seriesResults: null,
       })),
     });
 
-    await prisma.tournament.update({
-      where: { id: tournamentId },
-      data: { status: 'in_progress' },
-    });
-
-    const updatedTournament = await prisma.tournament.findUnique({
-      where: { id: tournamentId },
-      include: {
-        categories: true,
-        participants: { include: { stats: true, category: true } },
-        matches: { orderBy: [{ bracket: 'asc' }, { round: 'asc' }, { position: 'asc' }] },
-      },
-    });
-
-    res.json(updatedTournament);
+    await prisma.tournament.update({ where: { id: tournamentId }, data: { status: 'in_progress' } });
+    const updatedTournament = await getTournamentWithRelations(tournamentId);
+    return res.json(updatedTournament);
   } catch (error) {
     console.error('[generate-bracket]', error);
-    res.status(500).json({ error: 'Error al generar bracket' });
+    return res.status(500).json({ error: 'Error al generar bracket' });
   }
 });
 
-// ─── Match Result ─────────────────────────────────────────────────────────────
-
-// PATCH /api/tournaments/:id/matches/:matchId - Registrar resultado de partido
-router.patch('/:id/matches/:matchId', async (req, res) => {
+router.patch('/:id/matches/:matchId', requireAuth, async (req, res) => {
   try {
-    const { winnerId, score1, score2, resultType, arm, seriesResults } = req.body;
+    const data = matchResultSchema.parse(req.body);
     const matchId = req.params.matchId;
     const tournamentId = req.params.id;
 
-    const match = await prisma.match.findFirst({
-      where: { id: matchId, tournamentId },
-    });
+    const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId } });
+    if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
 
-    if (!match) return res.status(404).json({ error: 'Partido no encontrado' });
-    if (match.status === 'completed') {
-      return res.status(400).json({ error: 'Partido ya completado' });
+    const isAdmin = req.user!.role === 'admin';
+    const isOwner = tournament.createdById === req.user!.userId;
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ error: 'No tienes permisos para actualizar partidos' });
     }
 
-    // Determine loser (the other participant)
-    const loserId = match.participant1Id === winnerId
-      ? match.participant2Id
-      : match.participant1Id;
+    const match = await prisma.match.findFirst({ where: { id: matchId, tournamentId } });
+    if (!match) return res.status(404).json({ error: 'Partido no encontrado' });
+    if (match.status === 'completed') return res.status(400).json({ error: 'Partido ya completado' });
+    if (![match.participant1Id, match.participant2Id].includes(data.winnerId)) {
+      return res.status(400).json({ error: 'El ganador no pertenece a este partido' });
+    }
 
-    // Update match result
+    const loserId = match.participant1Id === data.winnerId ? match.participant2Id : match.participant1Id;
+
     await prisma.match.update({
       where: { id: matchId },
       data: {
-        winnerId,
+        winnerId: data.winnerId,
         loserId,
-        score1: score1 ?? null,
-        score2: score2 ?? null,
+        score1: data.score1 ?? null,
+        score2: data.score2 ?? null,
         status: 'completed',
-        resultType: resultType || null,
-        arm: arm || match.arm || null,
-        seriesResults: seriesResults ? JSON.stringify(seriesResults) : null,
+        resultType: data.resultType || null,
+        arm: data.arm || match.arm || null,
+        seriesResults: data.seriesResults ? JSON.stringify(data.seriesResults) : null,
       },
     });
 
-    // Update winner stats
-    if (winnerId) {
+    if (data.winnerId) {
       await prisma.participantStats.updateMany({
-        where: { participantId: winnerId },
+        where: { participantId: data.winnerId },
         data: {
           wins: { increment: 1 },
           matchesPlayed: { increment: 1 },
-          pointsFor: { increment: score1 ?? 0 },
-          pointsAgainst: { increment: score2 ?? 0 },
+          pointsFor: { increment: data.score1 ?? 0 },
+          pointsAgainst: { increment: data.score2 ?? 0 },
         },
       });
     }
 
-    // Update loser stats
     if (loserId) {
       await prisma.participantStats.updateMany({
         where: { participantId: loserId },
         data: {
           losses: { increment: 1 },
           matchesPlayed: { increment: 1 },
-          pointsFor: { increment: score2 ?? 0 },
-          pointsAgainst: { increment: score1 ?? 0 },
+          pointsFor: { increment: data.score2 ?? 0 },
+          pointsAgainst: { increment: data.score1 ?? 0 },
         },
       });
     }
 
-    // Advance winner to next match
-    if (match.nextMatchId && winnerId) {
-      const nextMatch = await prisma.match.findFirst({
-        where: { id: match.nextMatchId, tournamentId },
-      });
+    if (match.nextMatchId && data.winnerId) {
+      const nextMatch = await prisma.match.findFirst({ where: { id: match.nextMatchId, tournamentId } });
       if (nextMatch && nextMatch.status !== 'completed') {
-        const updateData: any = {};
-        if (match.nextMatchSlot === 0) updateData.participant1Id = winnerId;
-        else updateData.participant2Id = winnerId;
+        const updateData: Record<string, string> & { status?: string } = {} as Record<string, string> & { status?: string };
+        if (match.nextMatchSlot === 0) updateData.participant1Id = data.winnerId;
+        else updateData.participant2Id = data.winnerId;
 
-        // Both slots now filled → ready to play
-        const p1 = updateData.participant1Id ?? nextMatch.participant1Id;
-        const p2 = updateData.participant2Id ?? nextMatch.participant2Id;
-        if (p1 && p2) updateData.status = 'pending';
+        const participant1Id = updateData.participant1Id ?? nextMatch.participant1Id ?? undefined;
+        const participant2Id = updateData.participant2Id ?? nextMatch.participant2Id ?? undefined;
+        if (participant1Id && participant2Id) updateData.status = 'pending';
 
-        await prisma.match.update({
-          where: { id: match.nextMatchId },
-          data: updateData,
-        });
+        await prisma.match.update({ where: { id: match.nextMatchId }, data: updateData });
       }
     }
 
-    // Send loser to loser bracket match (Double Elimination)
     if (match.loserMatchId && loserId) {
-      const loserMatch = await prisma.match.findFirst({
-        where: { id: match.loserMatchId, tournamentId },
-      });
+      const loserMatch = await prisma.match.findFirst({ where: { id: match.loserMatchId, tournamentId } });
       if (loserMatch && loserMatch.status !== 'completed') {
-        const updateData: any = {};
+        const updateData: Record<string, string> & { status?: string } = {} as Record<string, string> & { status?: string };
         if (match.loserMatchSlot === 0) updateData.participant1Id = loserId;
         else updateData.participant2Id = loserId;
 
-        const p1 = updateData.participant1Id ?? loserMatch.participant1Id;
-        const p2 = updateData.participant2Id ?? loserMatch.participant2Id;
-        if (p1 && p2) updateData.status = 'pending';
+        const participant1Id = updateData.participant1Id ?? loserMatch.participant1Id ?? undefined;
+        const participant2Id = updateData.participant2Id ?? loserMatch.participant2Id ?? undefined;
+        if (participant1Id && participant2Id) updateData.status = 'pending';
 
-        await prisma.match.update({
-          where: { id: match.loserMatchId },
-          data: updateData,
-        });
+        await prisma.match.update({ where: { id: match.loserMatchId }, data: updateData });
       }
     }
 
-    // Grand Final reset logic (Double Elimination)
-    // If the WB champion (participant1) loses the Grand Final,
-    // the LB champion gets to play a reset match
-    const gf = await prisma.match.findFirst({
-      where: { tournamentId, bracket: 'grand_final', round: 999 },
-    });
-    const gfReset = await prisma.match.findFirst({
-      where: { tournamentId, bracket: 'grand_final', round: 1000 },
-    });
+    const grandFinal = await prisma.match.findFirst({ where: { tournamentId, bracket: 'grand_final', round: 999 } });
+    const grandFinalReset = await prisma.match.findFirst({ where: { tournamentId, bracket: 'grand_final', round: 1000 } });
 
-    if (gf && gfReset && matchId === gf.id) {
-      if (winnerId === gf.participant2Id) {
-        // LB champion won → play reset
+    if (grandFinal && grandFinalReset && matchId === grandFinal.id) {
+      if (data.winnerId === grandFinal.participant2Id) {
         await prisma.match.update({
-          where: { id: gfReset.id },
+          where: { id: grandFinalReset.id },
           data: {
-            participant1Id: gf.participant1Id,
-            participant2Id: gf.participant2Id,
+            participant1Id: grandFinal.participant1Id,
+            participant2Id: grandFinal.participant2Id,
             status: 'pending',
           },
         });
       } else {
-        // WB champion won → cancel reset
-        await prisma.match.update({
-          where: { id: gfReset.id },
-          data: { status: 'cancelled' },
-        });
+        await prisma.match.update({ where: { id: grandFinalReset.id }, data: { status: 'cancelled' } });
       }
     }
 
-    // Return full updated tournament
-    const updatedTournament = await prisma.tournament.findUnique({
-      where: { id: tournamentId },
-      include: {
-        categories: true,
-        participants: { include: { stats: true, category: true } },
-        matches: { orderBy: [{ bracket: 'asc' }, { round: 'asc' }, { position: 'asc' }] },
-      },
-    });
-
-    res.json(updatedTournament);
+    const updatedTournament = await getTournamentWithRelations(tournamentId);
+    return res.json(updatedTournament);
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: formatZodError(error), details: error.errors });
+    }
     console.error('[PATCH match]', error);
-    res.status(500).json({ error: 'Error al actualizar partido' });
+    return res.status(500).json({ error: 'Error al actualizar partido' });
   }
 });
 
-// ─── Ranking ──────────────────────────────────────────────────────────────────
-
-// GET /api/tournaments/:id/ranking
 router.get('/:id/ranking', async (req, res) => {
   try {
     const tournamentId = req.params.id;
@@ -537,24 +639,24 @@ router.get('/:id/ranking', async (req, res) => {
     });
 
     const ranked = participants
-      .map(p => ({
-        id: p.id,
-        name: p.name,
-        team: p.team,
-        country: p.country,
-        wins: p.stats?.wins ?? 0,
-        losses: p.stats?.losses ?? 0,
-        matchesPlayed: p.stats?.matchesPlayed ?? 0,
-        pointsFor: p.stats?.pointsFor ?? 0,
-        pointsAgainst: p.stats?.pointsAgainst ?? 0,
+      .map((participant) => ({
+        id: participant.id,
+        name: participant.name,
+        team: participant.team,
+        country: participant.country,
+        wins: participant.stats?.wins ?? 0,
+        losses: participant.stats?.losses ?? 0,
+        matchesPlayed: participant.stats?.matchesPlayed ?? 0,
+        pointsFor: participant.stats?.pointsFor ?? 0,
+        pointsAgainst: participant.stats?.pointsAgainst ?? 0,
       }))
-      .sort((a, b) => b.wins - a.wins || a.losses - b.losses);
+      .sort((left, right) => right.wins - left.wins || left.losses - right.losses);
 
-    const podium = ranked.slice(0, 3).map((p, i) => ({ ...p, rank: i + 1 }));
-    res.json({ ranking: ranked, podium });
+    const podium = ranked.slice(0, 3).map((participant, index) => ({ ...participant, rank: index + 1 }));
+    return res.json({ ranking: ranked, podium });
   } catch (error) {
     console.error('[GET ranking]', error);
-    res.status(500).json({ error: 'Error al obtener ranking' });
+    return res.status(500).json({ error: 'Error al obtener ranking' });
   }
 });
 

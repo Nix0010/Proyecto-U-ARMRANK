@@ -1,27 +1,108 @@
 import { create } from 'zustand';
-import type { Tournament, Participant, Category, RankedParticipant } from '@/types/tournament';
+import type { Category, Participant, RankedParticipant, Tournament } from '@/types/tournament';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
-// Helper para fetch con timeout
+type ApiErrorPayload = {
+  error?: string;
+  details?: Array<{ path?: Array<string | number>; message?: string }>;
+};
+
+type ApiParticipant = Omit<Participant, 'category' | 'categoryObj'> & {
+  category?: string | Category | null;
+  categoryObj?: Category | null;
+};
+
+type ApiTournament = Tournament & {
+  participants?: ApiParticipant[];
+  categories?: Category[];
+};
+
 const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 10000) => {
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
+  const id = window.setTimeout(() => controller.abort(), timeout);
 
   try {
-    const response = await fetch(url, {
+    return await fetch(url, {
       ...options,
       signal: controller.signal,
     });
-    clearTimeout(id);
-    return response;
   } catch (error) {
-    clearTimeout(id);
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('La conexión tardó demasiado. Verifica que el servidor esté corriendo.');
+      throw new Error('La conexion tardo demasiado. Verifica que el servidor este corriendo.');
     }
     throw error;
+  } finally {
+    window.clearTimeout(id);
   }
+};
+
+const normalizeParticipant = (participant: ApiParticipant): Participant => {
+  const categoryObj: Category | null = participant.category && typeof participant.category === 'object'
+    ? participant.category as Category
+    : null;
+
+  return {
+    ...participant,
+    categoryId: participant.categoryId ?? categoryObj?.id ?? null,
+    categoryObj,
+    category: typeof participant.category === 'string'
+      ? participant.category
+      : categoryObj?.name ?? null,
+    stats: participant.stats ?? {
+      wins: 0,
+      losses: 0,
+      draws: 0,
+      pointsFor: 0,
+      pointsAgainst: 0,
+      matchesPlayed: 0,
+      rank: null,
+    },
+  };
+};
+
+const normalizeTournament = (tournament: ApiTournament): Tournament => {
+  const categories = tournament.categories ?? [];
+  const categoryMap = new Map(categories.map((category) => [category.id, category]));
+
+  return {
+    ...tournament,
+    categories,
+    participants: (tournament.participants ?? []).map((participant) => {
+      const normalized = normalizeParticipant(participant);
+      const categoryObj = normalized.categoryObj ?? (normalized.categoryId ? categoryMap.get(normalized.categoryId) ?? null : null);
+
+      return {
+        ...normalized,
+        categoryObj,
+        category: normalized.category ?? categoryObj?.name ?? null,
+      };
+    }),
+    matches: (tournament.matches ?? []).map((match) => ({
+      ...match,
+      category: match.category ?? (match.categoryId ? categoryMap.get(match.categoryId)?.name ?? null : null),
+    })),
+  };
+};
+
+const parseErrorMessage = async (response: Response, fallback: string) => {
+  const payload = await response.json().catch(() => null) as ApiErrorPayload | null;
+  if (!payload) return fallback;
+
+  if (payload.error) {
+    return payload.error;
+  }
+
+  if (payload.details?.length) {
+    return payload.details
+      .map((detail) => {
+        const field = detail.path?.join('.') ?? 'campo';
+        return `${field}: ${detail.message ?? 'valor invalido'}`;
+      })
+      .join('; ');
+  }
+
+  return fallback;
 };
 
 interface ApiState {
@@ -31,27 +112,19 @@ interface ApiState {
   ranking: { ranking: RankedParticipant[]; podium: RankedParticipant[] } | null;
   isLoading: boolean;
   error: string | null;
-
-  // Tournament Actions
   fetchTournaments: () => Promise<void>;
   fetchTournament: (id: string) => Promise<void>;
   createTournament: (data: Partial<Tournament>) => Promise<Tournament>;
   updateTournament: (id: string, data: Partial<Tournament>) => Promise<void>;
   deleteTournament: (id: string) => Promise<void>;
   setCurrentTournament: (tournament: Tournament | null) => void;
-
-  // Participants
   addParticipant: (tournamentId: string, participant: Partial<Participant>) => Promise<void>;
   updateParticipant: (tournamentId: string, participantId: string, data: Partial<Participant>) => Promise<void>;
   removeParticipant: (tournamentId: string, participantId: string) => Promise<void>;
-
-  // Categories
   fetchCategories: (tournamentId: string) => Promise<Category[]>;
   createCategory: (tournamentId: string, data: Partial<Category>) => Promise<Category>;
   updateCategory: (tournamentId: string, categoryId: string, data: Partial<Category>) => Promise<void>;
   deleteCategory: (tournamentId: string, categoryId: string) => Promise<void>;
-
-  // Bracket
   generateBracket: (tournamentId: string) => Promise<void>;
   advanceMatch: (
     tournamentId: string,
@@ -62,15 +135,11 @@ interface ApiState {
     resultType?: string,
     arm?: string
   ) => Promise<void>;
-
-  // Ranking
   fetchRanking: (tournamentId: string) => Promise<void>;
-
   clearError: () => void;
   checkHealth: () => Promise<{ ok: boolean; data?: unknown; error?: string }>;
 }
 
-// Helper para manejar errores
 const handleError = (error: unknown): string => {
   if (error instanceof Error) return error.message;
   return 'Error desconocido';
@@ -88,9 +157,9 @@ export const useApiStore = create<ApiState>()((set) => ({
     set({ isLoading: true, error: null });
     try {
       const response = await fetchWithTimeout(`${API_URL}/tournaments`);
-      if (!response.ok) throw new Error('Error al cargar torneos');
-      const data = await response.json();
-      set({ tournaments: data, isLoading: false });
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al cargar torneos'));
+      const data = await response.json() as ApiTournament[];
+      set({ tournaments: data.map(normalizeTournament), isLoading: false });
     } catch (error) {
       set({ error: handleError(error), isLoading: false });
     }
@@ -100,9 +169,9 @@ export const useApiStore = create<ApiState>()((set) => ({
     set({ isLoading: true, error: null });
     try {
       const response = await fetchWithTimeout(`${API_URL}/tournaments/${id}`);
-      if (!response.ok) throw new Error('Error al cargar torneo');
-      const data = await response.json();
-      set({ currentTournament: data, isLoading: false });
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al cargar torneo'));
+      const data = await response.json() as ApiTournament;
+      set({ currentTournament: normalizeTournament(data), isLoading: false });
     } catch (error) {
       set({ error: handleError(error), isLoading: false });
     }
@@ -116,8 +185,8 @@ export const useApiStore = create<ApiState>()((set) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (!response.ok) throw new Error('Error al crear torneo');
-      const newTournament = await response.json();
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al crear torneo'));
+      const newTournament = normalizeTournament(await response.json() as ApiTournament);
       set((state) => ({
         tournaments: [newTournament, ...state.tournaments],
         currentTournament: newTournament,
@@ -138,10 +207,10 @@ export const useApiStore = create<ApiState>()((set) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (!response.ok) throw new Error('Error al actualizar torneo');
-      const updated = await response.json();
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al actualizar torneo'));
+      const updated = normalizeTournament(await response.json() as ApiTournament);
       set((state) => ({
-        tournaments: state.tournaments.map((t) => (t.id === id ? updated : t)),
+        tournaments: state.tournaments.map((tournament) => (tournament.id === id ? updated : tournament)),
         currentTournament: state.currentTournament?.id === id ? updated : state.currentTournament,
         isLoading: false,
       }));
@@ -154,12 +223,10 @@ export const useApiStore = create<ApiState>()((set) => ({
   deleteTournament: async (id: string) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await fetchWithTimeout(`${API_URL}/tournaments/${id}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) throw new Error('Error al eliminar torneo');
+      const response = await fetchWithTimeout(`${API_URL}/tournaments/${id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al eliminar torneo'));
       set((state) => ({
-        tournaments: state.tournaments.filter((t) => t.id !== id),
+        tournaments: state.tournaments.filter((tournament) => tournament.id !== id),
         currentTournament: state.currentTournament?.id === id ? null : state.currentTournament,
         isLoading: false,
       }));
@@ -169,9 +236,7 @@ export const useApiStore = create<ApiState>()((set) => ({
     }
   },
 
-  setCurrentTournament: (tournament) => {
-    set({ currentTournament: tournament });
-  },
+  setCurrentTournament: (tournament) => set({ currentTournament: tournament }),
 
   addParticipant: async (tournamentId: string, participant: Partial<Participant>) => {
     set({ isLoading: true, error: null });
@@ -181,28 +246,30 @@ export const useApiStore = create<ApiState>()((set) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(participant),
       });
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al agregar participante'));
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Error ${response.status}: ${response.statusText}`);
-      }
-
-      const newParticipant = await response.json();
-
+      const newParticipant = normalizeParticipant(await response.json() as ApiParticipant);
       set((state) => {
-        if (!state.currentTournament) return state;
+        if (!state.currentTournament) {
+          return { isLoading: false };
+        }
+
+        const updatedTournament = normalizeTournament({
+          ...state.currentTournament,
+          participants: [...state.currentTournament.participants, newParticipant],
+          currentParticipants: state.currentTournament.currentParticipants + 1,
+        });
+
         return {
-          currentTournament: {
-            ...state.currentTournament,
-            participants: [...state.currentTournament.participants, newParticipant],
-            currentParticipants: state.currentTournament.currentParticipants + 1,
-          },
+          currentTournament: updatedTournament,
+          tournaments: state.tournaments.map((tournament) => (
+            tournament.id === tournamentId ? updatedTournament : tournament
+          )),
           isLoading: false,
         };
       });
     } catch (error) {
-      const errorMessage = handleError(error);
-      set({ error: errorMessage, isLoading: false });
+      set({ error: handleError(error), isLoading: false });
       throw error;
     }
   },
@@ -215,29 +282,31 @@ export const useApiStore = create<ApiState>()((set) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al actualizar participante'));
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Error ${response.status}: ${response.statusText}`);
-      }
-
-      const updatedParticipant = await response.json();
-
+      const updatedParticipant = normalizeParticipant(await response.json() as ApiParticipant);
       set((state) => {
-        if (!state.currentTournament) return state;
+        if (!state.currentTournament) {
+          return { isLoading: false };
+        }
+
+        const updatedTournament = normalizeTournament({
+          ...state.currentTournament,
+          participants: state.currentTournament.participants.map((participant) => (
+            participant.id === participantId ? updatedParticipant : participant
+          )),
+        });
+
         return {
-          currentTournament: {
-            ...state.currentTournament,
-            participants: state.currentTournament.participants.map((p) =>
-              p.id === participantId ? updatedParticipant : p
-            ),
-          },
+          currentTournament: updatedTournament,
+          tournaments: state.tournaments.map((tournament) => (
+            tournament.id === tournamentId ? updatedTournament : tournament
+          )),
           isLoading: false,
         };
       });
     } catch (error) {
-      const errorMessage = handleError(error);
-      set({ error: errorMessage, isLoading: false });
+      set({ error: handleError(error), isLoading: false });
       throw error;
     }
   },
@@ -248,17 +317,24 @@ export const useApiStore = create<ApiState>()((set) => ({
       const response = await fetchWithTimeout(`${API_URL}/tournaments/${tournamentId}/participants/${participantId}`, {
         method: 'DELETE',
       });
-
-      if (!response.ok) throw new Error('Error al eliminar participante');
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al eliminar participante'));
 
       set((state) => {
-        if (!state.currentTournament) return state;
+        if (!state.currentTournament) {
+          return { isLoading: false };
+        }
+
+        const updatedTournament = normalizeTournament({
+          ...state.currentTournament,
+          participants: state.currentTournament.participants.filter((participant) => participant.id !== participantId),
+          currentParticipants: Math.max(state.currentTournament.currentParticipants - 1, 0),
+        });
+
         return {
-          currentTournament: {
-            ...state.currentTournament,
-            participants: state.currentTournament.participants.filter((p) => p.id !== participantId),
-            currentParticipants: state.currentTournament.currentParticipants - 1,
-          },
+          currentTournament: updatedTournament,
+          tournaments: state.tournaments.map((tournament) => (
+            tournament.id === tournamentId ? updatedTournament : tournament
+          )),
           isLoading: false,
         };
       });
@@ -274,17 +350,12 @@ export const useApiStore = create<ApiState>()((set) => ({
       const response = await fetchWithTimeout(`${API_URL}/tournaments/${tournamentId}/generate-bracket`, {
         method: 'POST',
       });
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al generar bracket'));
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Error al generar bracket');
-      }
-
-      const updated = await response.json();
-
+      const updated = normalizeTournament(await response.json() as ApiTournament);
       set((state) => ({
         currentTournament: updated,
-        tournaments: state.tournaments.map((t) => (t.id === tournamentId ? updated : t)),
+        tournaments: state.tournaments.map((tournament) => (tournament.id === tournamentId ? updated : tournament)),
         isLoading: false,
       }));
     } catch (error) {
@@ -301,17 +372,12 @@ export const useApiStore = create<ApiState>()((set) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ winnerId, score1, score2, resultType: resultType || null, arm: arm || null }),
       });
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al actualizar partido'));
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Error al actualizar partido');
-      }
-
-      const updated = await response.json();
-
+      const updated = normalizeTournament(await response.json() as ApiTournament);
       set((state) => ({
         currentTournament: updated,
-        tournaments: state.tournaments.map((t) => (t.id === tournamentId ? updated : t)),
+        tournaments: state.tournaments.map((tournament) => (tournament.id === tournamentId ? updated : tournament)),
         isLoading: false,
       }));
     } catch (error) {
@@ -320,13 +386,11 @@ export const useApiStore = create<ApiState>()((set) => ({
     }
   },
 
-  // ─── Category Actions ───────────────────────────────────────────────────────
-
   fetchCategories: async (tournamentId) => {
     try {
       const response = await fetchWithTimeout(`${API_URL}/tournaments/${tournamentId}/categories`);
-      if (!response.ok) throw new Error('Error al cargar categorías');
-      const data: Category[] = await response.json();
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al cargar categorias'));
+      const data = await response.json() as Category[];
       set({ categories: data });
       return data;
     } catch (error) {
@@ -342,22 +406,16 @@ export const useApiStore = create<ApiState>()((set) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || 'Error al crear categoría');
-      }
-      const created: Category = await response.json();
-      set((state) => ({ categories: [...state.categories, created] }));
-      // Also update currentTournament.categories if it exists
-      set((state) => {
-        if (!state.currentTournament) return state;
-        return {
-          currentTournament: {
-            ...state.currentTournament,
-            categories: [...(state.currentTournament.categories || []), created],
-          },
-        };
-      });
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al crear categoria'));
+
+      const created = await response.json() as Category;
+      set((state) => ({
+        categories: [...state.categories, created],
+        currentTournament: state.currentTournament ? {
+          ...state.currentTournament,
+          categories: [...(state.currentTournament.categories || []), created],
+        } : null,
+      }));
       return created;
     } catch (error) {
       set({ error: handleError(error) });
@@ -372,9 +430,16 @@ export const useApiStore = create<ApiState>()((set) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (!response.ok) throw new Error('Error al actualizar categoría');
-      const updated: Category = await response.json();
-      set((state) => ({ categories: state.categories.map(c => c.id === categoryId ? updated : c) }));
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al actualizar categoria'));
+
+      const updated = await response.json() as Category;
+      set((state) => ({
+        categories: state.categories.map((category) => category.id === categoryId ? updated : category),
+        currentTournament: state.currentTournament ? normalizeTournament({
+          ...state.currentTournament,
+          categories: state.currentTournament.categories.map((category) => category.id === categoryId ? updated : category),
+        }) : null,
+      }));
     } catch (error) {
       set({ error: handleError(error) });
       throw error;
@@ -386,13 +451,19 @@ export const useApiStore = create<ApiState>()((set) => ({
       const response = await fetchWithTimeout(`${API_URL}/tournaments/${tournamentId}/categories/${categoryId}`, {
         method: 'DELETE',
       });
-      if (!response.ok) throw new Error('Error al eliminar categoría');
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al eliminar categoria'));
+
       set((state) => ({
-        categories: state.categories.filter(c => c.id !== categoryId),
-        currentTournament: state.currentTournament ? {
+        categories: state.categories.filter((category) => category.id !== categoryId),
+        currentTournament: state.currentTournament ? normalizeTournament({
           ...state.currentTournament,
-          categories: (state.currentTournament.categories || []).filter(c => c.id !== categoryId),
-        } : null,
+          categories: state.currentTournament.categories.filter((category) => category.id !== categoryId),
+          participants: state.currentTournament.participants.map((participant) => (
+            participant.categoryId === categoryId
+              ? { ...participant, categoryId: null, category: null, categoryObj: null }
+              : participant
+          )),
+        }) : null,
       }));
     } catch (error) {
       set({ error: handleError(error) });
@@ -400,13 +471,11 @@ export const useApiStore = create<ApiState>()((set) => ({
     }
   },
 
-  // ─── Ranking ─────────────────────────────────────────────────────────────────
-
   fetchRanking: async (tournamentId) => {
     try {
       const response = await fetchWithTimeout(`${API_URL}/tournaments/${tournamentId}/ranking`);
-      if (!response.ok) throw new Error('Error al cargar ranking');
-      const data = await response.json();
+      if (!response.ok) throw new Error(await parseErrorMessage(response, 'Error al cargar ranking'));
+      const data = await response.json() as { ranking: RankedParticipant[]; podium: RankedParticipant[] };
       set({ ranking: data });
     } catch (error) {
       set({ error: handleError(error) });
@@ -425,3 +494,6 @@ export const useApiStore = create<ApiState>()((set) => ({
     }
   },
 }));
+
+
+
