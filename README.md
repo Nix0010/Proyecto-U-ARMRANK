@@ -1,44 +1,84 @@
-# 🏆 Tournament App - Sistema de Gestión de Torneos
+# ARMRANK
 
-Sistema completo para gestionar torneos de eliminación doble (doble bracket) con interfaz web moderna y base de datos PostgreSQL.
+Sistema web para gestionar torneos, participantes, categorias, rankings y llaves de competencia. El proyecto esta construido como una plataforma full-stack con frontend moderno, API propia y base de datos PostgreSQL.
 
-## ✨ Características
+> Proyecto desarrollado por Leyder Alvarez bajo la marca NetFlow como muestra de software a medida para organizadores, clubes y negocios que necesitan digitalizar procesos operativos.
 
-- 🎯 **Doble Eliminación**: Llave de ganadores y perdedores
-- 👥 **Gestión de Participantes**: Importación CSV, edición, seeds
-- 🏅 **Brackets Automáticos**: Generación automática de brackets
-- 📊 **Resultados en Tiempo Real**: Marcador y avance automático
-- 📱 **Responsive**: Funciona en móviles y desktop
-- 🌙 **Modo Oscuro/Claro**: Interfaz adaptable
-- 📄 **Exportación PDF**: Exporta brackets a PDF
+## Resumen
 
-## 🚀 Inicio Rápido
+ARMRANK permite crear torneos, registrar participantes, organizar categorias, generar brackets y actualizar resultados desde una interfaz web. El sistema esta pensado para competencias de armwrestling, pero su arquitectura puede adaptarse a otros modelos de torneos o eventos.
 
-### Opción 1: Script Automático (Recomendado)
+## Funcionalidades
 
-1. **Abre PowerShell como Administrador**
+- Gestion de torneos con estados, cupos, fechas, ubicacion y organizador.
+- Registro de participantes con equipo, pais, peso, seed y categoria.
+- Categorias por peso, brazo o modalidad.
+- Llaves de eliminacion simple, doble eliminacion, round robin y vendetta.
+- Avance automatico de ganadores y perdedores.
+- Ranking, podio y estadisticas de participantes.
+- Autenticacion con email/password y Google OAuth.
+- Panel administrativo y control de permisos por rol.
+- Enlaces publicos para compartir torneos.
+- Exportacion de brackets y resultados a PDF.
+- API REST conectada a PostgreSQL mediante Prisma.
 
-2. **Ejecuta el script de configuración:**
-```powershell
-cd "D:\USUARIO\Documents\PROYECTO U"
-.\setup-local.ps1
+## Stack Tecnologico
+
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=fff)
+![Vite](https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=fff)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?logo=tailwindcss&logoColor=fff)
+![Express](https://img.shields.io/badge/Express-4-000000?logo=express&logoColor=fff)
+![Prisma](https://img.shields.io/badge/Prisma-5-2D3748?logo=prisma&logoColor=fff)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-4169E1?logo=postgresql&logoColor=fff)
+
+## Arquitectura
+
+```text
+ARMRANK/
+|-- app/        Frontend React + Vite + TypeScript
+|-- backend/    API Express + Prisma + PostgreSQL
+|-- database/   Scripts SQL
+|-- deploy/     Configuracion de despliegue
 ```
 
-3. **Sigue las instrucciones en pantalla**
+### Frontend
 
-### Opción 2: Manual
+- React 19 con TypeScript.
+- Vite para desarrollo y build.
+- Tailwind CSS y componentes estilo shadcn/ui.
+- Zustand para estado global conectado a la API.
+- Formularios validados con Zod.
+- Interfaz responsive para escritorio y movil.
 
-#### Requisitos
-- [Node.js 20.x](https://nodejs.org/)
-- [PostgreSQL 15+](https://www.postgresql.org/download/windows/)
+### Backend
 
-#### 1. Configurar Base de Datos
-```sql
--- En SQL Shell (psql) o pgAdmin
-CREATE DATABASE tournament_db;
-```
+- Express con rutas REST.
+- Prisma ORM sobre PostgreSQL.
+- JWT para autenticacion.
+- Google OAuth.
+- Validacion de datos con Zod.
+- Servicios separados para brackets, rankings y autenticacion.
 
-#### 2. Backend
+## Modelo de Negocio que Resuelve
+
+Muchos organizadores gestionan torneos con hojas de calculo, mensajes sueltos o registros manuales. ARMRANK centraliza el proceso en una plataforma:
+
+- Reduce errores al mover participantes entre rondas.
+- Acelera el registro y la organizacion de categorias.
+- Facilita compartir resultados con publico y competidores.
+- Permite adaptar reglas y formatos segun la competencia.
+
+## Instalacion Local
+
+### Requisitos
+
+- Node.js 20+
+- PostgreSQL 15+
+- Base de datos `tournament_db`
+
+### Backend
+
 ```powershell
 cd backend
 npm install
@@ -47,117 +87,91 @@ npm run db:migrate
 npm run dev
 ```
 
-#### 3. Frontend
+API local:
+
+```text
+http://localhost:3001/api
+```
+
+Health check:
+
+```text
+http://localhost:3001/api/health
+```
+
+### Frontend
+
 ```powershell
 cd app
 npm install
 npm run dev
 ```
 
-## 📖 Documentación
+Aplicacion local:
 
-| Archivo | Descripción |
-|---------|-------------|
-| `SETUP_LOCAL.md` | Guía completa de configuración local |
-| `DEPLOY_UBUNTU.md` | Guía de despliegue en Ubuntu Server |
-| `QUICKSTART.md` | Referencia rápida de comandos |
-
-## 🌐 URLs de Desarrollo
-
-| Servicio | URL |
-|----------|-----|
-| Aplicación Web | http://localhost:5173 |
-| API Backend | http://localhost:3001/api |
-| Health Check | http://localhost:3001/api/health |
-
-## 🛠️ Comandos Útiles
-
-### Iniciar todo (con logs)
-```powershell
-.\start-dev.ps1
+```text
+http://localhost:5173
 ```
 
-### Solo Backend
+## Variables de Entorno
+
+Backend:
+
+```env
+DATABASE_URL="postgresql://usuario:password@localhost:5432/tournament_db"
+JWT_SECRET="cambia-este-secreto"
+PORT=3001
+FRONTEND_URL="http://localhost:5173"
+GOOGLE_CLIENT_ID="tu-google-client-id"
+```
+
+Frontend:
+
+```env
+VITE_API_URL="http://localhost:3001/api"
+VITE_GOOGLE_CLIENT_ID="tu-google-client-id"
+```
+
+## Scripts Utiles
+
 ```powershell
+# Iniciar frontend y backend con script local
+.\iniciar-todo.bat
+
+# Backend
 cd backend
 npm run dev
-```
+npm run build
+npm run db:studio
 
-### Solo Frontend
-```powershell
+# Frontend
 cd app
 npm run dev
+npm run build
+npm run lint
 ```
 
-### Base de datos
-```powershell
-cd backend
-npm run db:migrate    # Ejecutar migraciones
-npm run db:studio     # Abrir Prisma Studio (GUI)
-```
+## Estado del Proyecto
 
-## 📁 Estructura del Proyecto
+El proyecto cuenta con una base funcional para uso local y despliegue. Las siguientes mejoras recomendadas para produccion son:
 
-```
-PROYECTO U/
-├── app/                    # Frontend (React + Vite)
-│   ├── src/
-│   │   ├── components/    # Componentes UI
-│   │   ├── store/         # Estado global (Zustand)
-│   │   └── types/         # Tipos TypeScript
-│   └── package.json
-│
-├── backend/                # Backend (Express + Prisma)
-│   ├── src/
-│   │   ├── routes/        # Endpoints API
-│   │   └── db.ts          # Cliente Prisma
-│   ├── prisma/
-│   │   └── schema.prisma  # Modelos de datos
-│   └── package.json
-│
-├── deploy/                 # Scripts de despliegue
-├── database/               # Scripts SQL
-└── README.md
-```
+- Configurar CI/CD.
+- Agregar pruebas automatizadas de API y componentes criticos.
+- Documentar endpoints con OpenAPI.
+- Separar entornos de desarrollo, staging y produccion.
+- Agregar monitoreo de errores y logs centralizados.
 
-## 🐛 Solución de Problemas
+## Autor
 
-### Error: "Cannot connect to database"
-- Verifica que PostgreSQL esté corriendo
-- Revisa la contraseña en `backend/.env`
-- Asegúrate de que la base de datos `tournament_db` exista
+**Leyder Alvarez**  
+Desarrollador web y automatizaciones bajo la marca **NetFlow**.
 
-### Error: "Port already in use"
-- Cambia el puerto en `backend/.env` (PORT=3002)
-- O cierra el programa que usa el puerto
+Servicios relacionados:
 
-### Error de CORS
-- Verifica que el backend esté corriendo
-- Revisa que `FRONTEND_URL` en `backend/.env` sea correcto
+- Paginas web para negocios.
+- Sistemas web a medida.
+- Automatizaciones de procesos.
+- Chatbots de WhatsApp.
+- Integraciones con IA aplicada a negocios.
 
-## 📦 Despliegue en Producción
-
-Ver guía completa en: `DEPLOY_UBUNTU.md`
-
-Resumen rápido:
-1. Compilar frontend: `cd app && npm run build`
-2. Configurar PostgreSQL en servidor
-3. Subir archivos al servidor
-4. Configurar Nginx
-5. Iniciar con PM2
-
-## 📝 Licencia
-
-Proyecto privado - Uso personal
-
-## 👨‍💻 Desarrollo
-
-Desarrollado con:
-- React + TypeScript + Vite
-- Tailwind CSS + shadcn/ui
-- Express + Prisma + PostgreSQL
-- Zustand + Zod
-
----
-
-¿Necesitas ayuda? Revisa los archivos `.md` en la carpeta raíz.
+GitHub: [@Nix0010](https://github.com/Nix0010)
