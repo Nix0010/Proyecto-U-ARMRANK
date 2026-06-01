@@ -18,7 +18,9 @@ services:
 
   # Backend API (Node.js + Prisma)
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
     container_name: armrank_backend
     restart: always
     environment:

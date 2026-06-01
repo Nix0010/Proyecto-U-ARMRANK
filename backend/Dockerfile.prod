@@ -1,0 +1,22 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache openssl
+
+# Copy package files and prisma schema
+COPY package*.json ./
+COPY prisma ./prisma/
+
+# Install only production dependencies and generate prisma client
+RUN npm ci --omit=dev && npx prisma generate
+
+# Copy pre-compiled javascript files
+COPY dist ./dist
+
+ENV NODE_ENV=production
+ENV PORT=3001
+
+EXPOSE 3001
+
+CMD ["npm", "start"]
