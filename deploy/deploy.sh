@@ -14,9 +14,9 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 # Variables
-APP_DIR="/var/www/tournament"
+APP_DIR="/var/www/armrank"
 BACKEND_DIR="$APP_DIR/backend"
-FRONTEND_DIR="$APP_DIR/frontend"
+FRONTEND_DIR="$APP_DIR/app"
 DB_USER="tournament"
 DB_NAME="tournament_db"
 
