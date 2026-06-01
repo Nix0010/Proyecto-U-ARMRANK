@@ -33,7 +33,9 @@ services:
 
   # Frontend Web (React + Vite via Nginx)
   frontend:
-    build: ./app
+    build:
+      context: ./app
+      dockerfile: Dockerfile.prod
     container_name: armrank_frontend
     restart: always
     ports:
