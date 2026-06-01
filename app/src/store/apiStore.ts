@@ -22,9 +22,16 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout 
   const controller = new AbortController();
   const id = window.setTimeout(() => controller.abort(), timeout);
 
+  const token = localStorage.getItem('armrank_token');
+  const headers = {
+    ...options.headers,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
   try {
     return await fetch(url, {
       ...options,
+      headers,
       signal: controller.signal,
     });
   } catch (error) {
