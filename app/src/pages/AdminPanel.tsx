@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Loader2, Users, Trophy, Settings, BarChart3, Activity, ShieldAlert, ArrowLeft } from 'lucide-react';
+import { Loader2, Users, Trophy, Settings, BarChart3, ShieldAlert, ArrowLeft } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';

@@ -1,0 +1,69 @@
+GUÍA
+
+PRÁCTICA
+
+N°
+
+5:
+
+INTEGRACIÓN
+
+DE
+
+OBJETOS
+
+REMOTOS
+
+Y
+
+SERIALIZACIÓN
+•
+
+Asignatura: Arquitectura Cliente-Servidor
+
+•
+
+Sesión: 16/03/2026
+
+OBJETIVO: Implementar el mecanismo de transporte de objetos mediante técnicas
+de serialización y la construcción de un Stub inicial para ocultar la complejidad del
+socket en el sistema distribuido.
+Actividad 1: Definición de Interfaces y Clases Serializables
+•
+
+Diseñar la clase de negocio (ej. Producto, Usuario o Mensaje) que será el
+objeto de intercambio en su proyecto.
+
+•
+
+Asegurar que la estructura de la clase sea idéntica tanto en el cliente como
+en el servidor. En esta etapa, el estudiante debe comprender que para que
+el Stub funcione, ambos extremos deben conocer la definición del objeto
+(Marshaling).
+
+Actividad 2: Implementación del Stub (Marshaling de Objetos)
+•
+
+Programar en el lado del cliente una clase de tipo Stub que reciba un objeto
+de negocio, lo convierta en un flujo de bytes mediante la función de
+serialización y lo inyecte en el socket.
+
+•
+
+El objetivo es que el programa principal del cliente llame a un método local y
+sea el Stub quien se encargue de "empaquetar" (Marshaling) el objeto para
+su envío, otorgando la primera capa de transparencia al sistema.
+
+Actividad 3: Reconstrucción en el Servidor (Unmarshaling)
+•
+
+Implementar en el servidor la lógica de recepción de la trama (Payload) y su
+posterior reconstrucción para volver a convertir los bytes en un objeto vivo.
+
+•
+
+Validar mediante la inspección del objeto reconstruido que se mantiene el
+estado original (los datos de las propiedades) que fue enviado desde el
+cliente, emulando así la presencia de un objeto remoto.
+
+

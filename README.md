@@ -1,163 +1,120 @@
-# 🏆 Tournament App - Sistema de Gestión de Torneos
+<div align="center">
 
-Sistema completo para gestionar torneos de eliminación doble (doble bracket) con interfaz web moderna y base de datos PostgreSQL.
+# 🦾 ARMRANK Enterprise
 
-## ✨ Características
+**Plataforma Integral de Gestión y Ranking para Torneos de Arm Wrestling**
 
-- 🎯 **Doble Eliminación**: Llave de ganadores y perdedores
-- 👥 **Gestión de Participantes**: Importación CSV, edición, seeds
-- 🏅 **Brackets Automáticos**: Generación automática de brackets
-- 📊 **Resultados en Tiempo Real**: Marcador y avance automático
-- 📱 **Responsive**: Funciona en móviles y desktop
-- 🌙 **Modo Oscuro/Claro**: Interfaz adaptable
-- 📄 **Exportación PDF**: Exporta brackets a PDF
+[![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactjs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](https://postgresql.org/)
+[![Prisma](https://img.shields.io/badge/Prisma-3982CE?style=for-the-badge&logo=Prisma&logoColor=white)](https://prisma.io/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 
-## 🚀 Inicio Rápido
+*Una solución Full-Stack diseñada para gestionar competidores, categorías, enfrentamientos y estadísticas en tiempo real con latencia ultra baja.*
 
-### Opción 1: Script Automático (Recomendado)
-
-1. **Abre PowerShell como Administrador**
-
-2. **Ejecuta el script de configuración:**
-```powershell
-cd "D:\USUARIO\Documents\PROYECTO U"
-.\setup-local.ps1
-```
-
-3. **Sigue las instrucciones en pantalla**
-
-### Opción 2: Manual
-
-#### Requisitos
-- [Node.js 20.x](https://nodejs.org/)
-- [PostgreSQL 15+](https://www.postgresql.org/download/windows/)
-
-#### 1. Configurar Base de Datos
-```sql
--- En SQL Shell (psql) o pgAdmin
-CREATE DATABASE tournament_db;
-```
-
-#### 2. Backend
-```powershell
-cd backend
-npm install
-npm run db:generate
-npm run db:migrate
-npm run dev
-```
-
-#### 3. Frontend
-```powershell
-cd app
-npm install
-npm run dev
-```
-
-## 📖 Documentación
-
-| Archivo | Descripción |
-|---------|-------------|
-| `SETUP_LOCAL.md` | Guía completa de configuración local |
-| `DEPLOY_UBUNTU.md` | Guía de despliegue en Ubuntu Server |
-| `QUICKSTART.md` | Referencia rápida de comandos |
-
-## 🌐 URLs de Desarrollo
-
-| Servicio | URL |
-|----------|-----|
-| Aplicación Web | http://localhost:5173 |
-| API Backend | http://localhost:3001/api |
-| Health Check | http://localhost:3001/api/health |
-
-## 🛠️ Comandos Útiles
-
-### Iniciar todo (con logs)
-```powershell
-.\start-dev.ps1
-```
-
-### Solo Backend
-```powershell
-cd backend
-npm run dev
-```
-
-### Solo Frontend
-```powershell
-cd app
-npm run dev
-```
-
-### Base de datos
-```powershell
-cd backend
-npm run db:migrate    # Ejecutar migraciones
-npm run db:studio     # Abrir Prisma Studio (GUI)
-```
-
-## 📁 Estructura del Proyecto
-
-```
-PROYECTO U/
-├── app/                    # Frontend (React + Vite)
-│   ├── src/
-│   │   ├── components/    # Componentes UI
-│   │   ├── store/         # Estado global (Zustand)
-│   │   └── types/         # Tipos TypeScript
-│   └── package.json
-│
-├── backend/                # Backend (Express + Prisma)
-│   ├── src/
-│   │   ├── routes/        # Endpoints API
-│   │   └── db.ts          # Cliente Prisma
-│   ├── prisma/
-│   │   └── schema.prisma  # Modelos de datos
-│   └── package.json
-│
-├── deploy/                 # Scripts de despliegue
-├── database/               # Scripts SQL
-└── README.md
-```
-
-## 🐛 Solución de Problemas
-
-### Error: "Cannot connect to database"
-- Verifica que PostgreSQL esté corriendo
-- Revisa la contraseña en `backend/.env`
-- Asegúrate de que la base de datos `tournament_db` exista
-
-### Error: "Port already in use"
-- Cambia el puerto en `backend/.env` (PORT=3002)
-- O cierra el programa que usa el puerto
-
-### Error de CORS
-- Verifica que el backend esté corriendo
-- Revisa que `FRONTEND_URL` en `backend/.env` sea correcto
-
-## 📦 Despliegue en Producción
-
-Ver guía completa en: `DEPLOY_UBUNTU.md`
-
-Resumen rápido:
-1. Compilar frontend: `cd app && npm run build`
-2. Configurar PostgreSQL en servidor
-3. Subir archivos al servidor
-4. Configurar Nginx
-5. Iniciar con PM2
-
-## 📝 Licencia
-
-Proyecto privado - Uso personal
-
-## 👨‍💻 Desarrollo
-
-Desarrollado con:
-- React + TypeScript + Vite
-- Tailwind CSS + shadcn/ui
-- Express + Prisma + PostgreSQL
-- Zustand + Zod
+</div>
 
 ---
 
-¿Necesitas ayuda? Revisa los archivos `.md` en la carpeta raíz.
+## 🌟 Características Principales
+
+- 🏋️‍♂️ **Gestión de Competidores**: Registro, pesaje y categorización automática.
+- 🏆 **Matchmaking Algorítmico**: Generación automática de llaves (brackets) de torneo.
+- 📊 **Ranking en Tiempo Real**: Estadísticas, ELO y puntuaciones calculadas al instante.
+- 🔌 **Arquitectura Distribuida**: Comunicación basada en RPC para escalabilidad masiva.
+- 🐳 **Docker-Ready**: Infraestructura containerizada lista para despliegue en la nube.
+
+---
+
+## 📐 Arquitectura del Sistema
+
+```mermaid
+graph TD
+    Client[Frontend: React + Vite] <-->|REST API / JWT| Backend[Backend: Node.js + Express]
+    
+    subgraph Microservicios RPC
+        Backend <-->|gRPC / Sockets| Engine[Matchmaking Engine]
+        Backend <-->|gRPC / Sockets| Registry[Competitor Registry]
+    end
+    
+    Backend -.->|Prisma ORM| DB[(PostgreSQL)]
+```
+
+---
+
+## 🛠️ Stack Tecnológico
+
+| Capa | Tecnología | Función |
+|---|---|---|
+| **Frontend** | React + Vite + TailwindCSS | Interfaz de usuario reactiva y moderna |
+| **Backend** | Node.js + Express + RPC | Lógica de negocio y orquestación de servicios |
+| **Base de Datos** | PostgreSQL + Prisma ORM | Almacenamiento relacional tipado y seguro |
+| **Despliegue** | Docker & Nginx | Containerización y proxy reverso para producción |
+
+---
+
+## 🚀 Despliegue Rápido (Producción)
+
+El sistema está empaquetado para ser desplegado en un solo paso mediante Docker Compose.
+
+### 1. Iniciar los Servicios
+Asegúrate de configurar los archivos `.env` (usa `.env.example` como plantilla) y ejecuta:
+
+```bash
+docker-compose up -d --build
+```
+
+Esto levantará 3 contenedores:
+- `armrank_db` (PostgreSQL 15)
+- `armrank_backend` (API Node.js en puerto 3001)
+- `armrank_frontend` (Cliente React vía Nginx en puerto 80)
+
+### 2. Validar Base de Datos
+Para generar el esquema inicial en la base de datos:
+```bash
+docker exec -it armrank_backend npm run db:deploy
+```
+
+---
+
+## 💻 Desarrollo Local
+
+Si deseas modificar el código sin Docker:
+
+1. **Instalar dependencias**:
+   ```bash
+   cd backend && npm install
+   cd ../app && npm install
+   ```
+
+2. **Iniciar Backend**:
+   ```bash
+   cd backend
+   npm run dev:all # Levanta el API y los nodos RPC
+   ```
+
+3. **Iniciar Frontend**:
+   ```bash
+   cd app
+   npm run dev
+   ```
+
+---
+
+## 📂 Organización del Proyecto
+
+Toda la documentación técnica, guías de práctica universitarias y diagramas anteriores se encuentran ahora archivados de forma segura en la carpeta `/docs`. 
+
+```text
+ARMRANK/
+├── app/             # Frontend React (Vite)
+├── backend/         # Node.js API & Prisma
+├── docs/            # Documentación académica y técnica (PDFs, DOCX)
+├── scripts/         # Utilidades de automatización local
+└── docker-compose.yml
+```
+
+---
+<div align="center">
+  <sub>Arquitectura limpia implementada por el equipo de ingeniería de NetFlow</sub>
+</div>

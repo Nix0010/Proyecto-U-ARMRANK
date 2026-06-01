@@ -1,0 +1,58 @@
+GUÍA PRÁCTICA N° 6: IMPLEMENTACIÓN DEL SISTEMA DE NOMBRADO Y
+REGISTRO (REGISTRY)
+•
+
+Asignatura: Arquitectura Cliente-Servidor
+
+•
+
+Sesión: 06/04/2026
+
+OBJETIVO: Implementar un servicio de directorio (Registry) que asocie nombres
+lógicos a referencias de objetos remotos, facilitando la búsqueda y localización de
+servicios en el sistema distribuido.
+Actividad 1: Configuración del Servicio de Directorio (Registry)
+•
+
+Programar un módulo independiente en el servidor que funcione como tabla
+de búsqueda.
+
+•
+
+Implementar una estructura de datos (ej. arreglo asociativo o base de datos
+ligera) donde se almacene el "Nombre del Servicio" vinculado a su "Dirección
+de Red" (IP y Puerto) o al objeto serializado correspondiente.
+
+•
+
+Concepto clave: El Registry debe ser capaz de procesar solicitudes de tipo
+Bind (vincular) y Lookup (buscar).
+
+Actividad 2: Protocolo de Registro de Servicios (Service Registration)
+•
+
+Modificar el lado del servidor para que, al iniciar, el objeto remoto se anuncie
+automáticamente ante el Registry.
+
+•
+
+Implementar la validación de disponibilidad: si el servicio ya existe con ese
+nombre, el Registry debe gestionar la actualización de la referencia para
+garantizar la interoperabilidad.
+
+Actividad 3: Búsqueda Dinámica desde el Cliente (Naming Systems)
+•
+
+Eliminar las IPs "quemadas" (hardcoded) en el código del cliente.
+
+•
+
+Programar el cliente para que primero realice una consulta al Registry
+enviando el nombre lógico del servicio deseado.
+
+•
+
+Utilizar la respuesta del Registry para establecer la conexión final con el
+objeto remoto de forma transparente.
+
+

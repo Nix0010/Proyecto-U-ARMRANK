@@ -2,7 +2,8 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db';
 import { generateBracket } from '../services/bracketService';
-import { requireAuth, optionalAuth } from '../middlewares/auth';
+import { RpcStub } from '../services/rpc-core/common';
+import { optionalAuth } from '../middlewares/auth';
 import { asyncHandler } from '../middlewares/errorHandler';
 
 const router = Router();
@@ -78,6 +79,13 @@ const getTournamentWithRelations = (id: string) => prisma.tournament.findUnique(
     },
   },
 });
+
+const canManageTournament = (
+  req: Request,
+  tournament: { createdById: string | null }
+) => !tournament.createdById
+  || req.user?.role === 'admin'
+  || req.user?.userId === tournament.createdById;
 
 async function resolveCategoryId(tournamentId: string, categoryId?: string | null, categoryName?: string | null) {
   if (categoryId) {
@@ -194,7 +202,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
   }
 });
 
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', optionalAuth, async (req, res) => {
   try {
     const data = createTournamentSchema.parse(req.body);
     const tournament = await prisma.tournament.create({
@@ -203,7 +211,7 @@ router.post('/', requireAuth, async (req, res) => {
         startDate: data.startDate ? new Date(data.startDate) : undefined,
         endDate: data.endDate ? new Date(data.endDate) : undefined,
         sport: data.sport.toLowerCase(),
-        createdById: req.user!.userId, // Enforce ownership
+        createdById: req.user?.userId ?? null,
       },
     });
 
@@ -216,7 +224,7 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
-router.patch('/:id', requireAuth, async (req, res) => {
+router.patch('/:id', optionalAuth, async (req, res) => {
   try {
     const data = updateTournamentSchema.parse(req.body);
     const tournamentId = req.params.id;
@@ -226,9 +234,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Torneo no encontrado' });
     }
 
-    const isAdmin = req.user!.role === 'admin';
-    const isOwner = existing.createdById === req.user!.userId;
-    if (!isAdmin && !isOwner) {
+    if (!canManageTournament(req, existing)) {
       return res.status(403).json({ error: 'No tienes permisos para modificar este torneo' });
     }
 
@@ -268,14 +274,12 @@ router.patch('/:id', requireAuth, async (req, res) => {
   }
 });
 
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', optionalAuth, async (req, res) => {
   try {
     const existing = await prisma.tournament.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Torneo no encontrado' });
 
-    const isAdmin = req.user!.role === 'admin';
-    const isOwner = existing.createdById === req.user!.userId;
-    if (!isAdmin && !isOwner) {
+    if (!canManageTournament(req, existing)) {
       return res.status(403).json({ error: 'No tienes permisos para eliminar este torneo' });
     }
 
@@ -286,7 +290,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/:id/participants', requireAuth, async (req, res) => {
+router.post('/:id/participants', optionalAuth, async (req, res) => {
   try {
     const data = participantSchema.parse(req.body);
     const tournamentId = req.params.id;
@@ -300,9 +304,7 @@ router.post('/:id/participants', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Torneo no encontrado' });
     }
 
-    const isAdmin = req.user!.role === 'admin';
-    const isOwner = tournament.createdById === req.user!.userId;
-    if (!isAdmin && !isOwner) {
+    if (!canManageTournament(req, tournament)) {
       return res.status(403).json({ error: 'No tienes permisos para agregar participantes' });
     }
 
@@ -350,7 +352,7 @@ router.post('/:id/participants', requireAuth, async (req, res) => {
   }
 });
 
-router.patch('/:id/participants/:participantId', requireAuth, async (req, res) => {
+router.patch('/:id/participants/:participantId', optionalAuth, async (req, res) => {
   try {
     const data = participantSchema.partial().parse(req.body);
     const tournamentId = req.params.id;
@@ -359,9 +361,7 @@ router.patch('/:id/participants/:participantId', requireAuth, async (req, res) =
     const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId } });
     if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
 
-    const isAdmin = req.user!.role === 'admin';
-    const isOwner = tournament.createdById === req.user!.userId;
-    if (!isAdmin && !isOwner) {
+    if (!canManageTournament(req, tournament)) {
       return res.status(403).json({ error: 'No tienes permisos para modificar participantes' });
     }
 
@@ -397,7 +397,7 @@ router.patch('/:id/participants/:participantId', requireAuth, async (req, res) =
   }
 });
 
-router.delete('/:id/participants/:participantId', requireAuth, async (req, res) => {
+router.delete('/:id/participants/:participantId', optionalAuth, async (req, res) => {
   try {
     const tournamentId = req.params.id;
     const participantId = req.params.participantId;
@@ -405,9 +405,7 @@ router.delete('/:id/participants/:participantId', requireAuth, async (req, res) 
     const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId } });
     if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
 
-    const isAdmin = req.user!.role === 'admin';
-    const isOwner = tournament.createdById === req.user!.userId;
-    if (!isAdmin && !isOwner) {
+    if (!canManageTournament(req, tournament)) {
       return res.status(403).json({ error: 'No tienes permisos para eliminar participantes' });
     }
 
@@ -430,7 +428,7 @@ router.delete('/:id/participants/:participantId', requireAuth, async (req, res) 
   }
 });
 
-router.post('/:id/generate-bracket', requireAuth, async (req, res) => {
+router.post('/:id/generate-bracket', optionalAuth, async (req, res) => {
   try {
     const tournamentId = req.params.id;
     const tournament = await prisma.tournament.findUnique({
@@ -440,9 +438,7 @@ router.post('/:id/generate-bracket', requireAuth, async (req, res) => {
 
     if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
 
-    const isAdmin = req.user!.role === 'admin';
-    const isOwner = tournament.createdById === req.user!.userId;
-    if (!isAdmin && !isOwner) {
+    if (!canManageTournament(req, tournament)) {
       return res.status(403).json({ error: 'No tienes permisos para generar llaves' });
     }
 
@@ -459,14 +455,30 @@ router.post('/:id/generate-bracket', requireAuth, async (req, res) => {
       byCategory.get(key)?.push(participant);
     }
 
-    let allMatches: ReturnType<typeof generateBracket>['matches'] = [];
+    let allMatches: any[] = [];
     const type = tournament.type ?? 'double_elimination';
     const bestOf = tournament.bestOf ?? 1;
+
+    // Crear el Stub para comunicación remota (Guía 5 y 6)
+    const matchmakerStub = new RpcStub('MatchmakingEngine');
 
     for (const [categoryKey, participants] of byCategory.entries()) {
       if (participants.length < 2) continue;
       const categoryId = categoryKey === '__none__' ? null : categoryKey;
-      const result = generateBracket(type, participants, tournamentId, categoryId, bestOf);
+      
+      // Reemplazo de llamada local por RPC
+      const result = await matchmakerStub.call('GENERATE', {
+        type, 
+        participants, 
+        tournamentId, 
+        categoryId, 
+        bestOf
+      });
+
+      if (result && result.error) {
+        throw new Error(`RPC Error: ${result.error}`);
+      }
+
       allMatches = allMatches.concat(result.matches);
     }
 
@@ -503,13 +515,17 @@ router.post('/:id/generate-bracket', requireAuth, async (req, res) => {
     await prisma.tournament.update({ where: { id: tournamentId }, data: { status: 'in_progress' } });
     const updatedTournament = await getTournamentWithRelations(tournamentId);
     return res.json(updatedTournament);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[generate-bracket]', error);
-    return res.status(500).json({ error: 'Error al generar bracket' });
+    let errorMessage = 'Error al generar bracket';
+    if (error && error.message && (error.message.includes('Socket') || error.message.includes('no encontrado en el Registry') || error.message.includes('RPC Error'))) {
+      errorMessage = 'No se pudo conectar con el motor de emparejamiento (Matchmaking Engine RPC). Por favor, asegúrese de que el servicio RPC esté iniciado.';
+    }
+    return res.status(500).json({ error: errorMessage });
   }
 });
 
-router.patch('/:id/matches/:matchId', requireAuth, async (req, res) => {
+router.patch('/:id/matches/:matchId', optionalAuth, async (req, res) => {
   try {
     const data = matchResultSchema.parse(req.body);
     const matchId = req.params.matchId;
@@ -518,9 +534,7 @@ router.patch('/:id/matches/:matchId', requireAuth, async (req, res) => {
     const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId } });
     if (!tournament) return res.status(404).json({ error: 'Torneo no encontrado' });
 
-    const isAdmin = req.user!.role === 'admin';
-    const isOwner = tournament.createdById === req.user!.userId;
-    if (!isAdmin && !isOwner) {
+    if (!canManageTournament(req, tournament)) {
       return res.status(403).json({ error: 'No tienes permisos para actualizar partidos' });
     }
 

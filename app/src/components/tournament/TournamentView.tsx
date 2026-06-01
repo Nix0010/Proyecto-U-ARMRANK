@@ -285,8 +285,10 @@ export function TournamentView({ tournament, onBack }: TournamentViewProps) {
           await fetchTournament(tournament.id);
           setActiveTab('overview');
           toast.success('Llaves reiniciadas');
-        } catch {
-          toast.error('Error al reiniciar');
+        } catch (error) {
+          toast.error('Error al reiniciar', {
+            description: error instanceof Error ? error.message : 'Error desconocido',
+          });
         }
       },
     });
@@ -314,8 +316,10 @@ export function TournamentView({ tournament, onBack }: TournamentViewProps) {
           await fetchTournament(tournament.id);
           setActiveTab('bracket');
           toast.success('¡Torneo iniciado!', { icon: '🏆' });
-        } catch {
-          toast.error('Error al iniciar torneo');
+        } catch (error) {
+          toast.error('Error al iniciar torneo', {
+            description: error instanceof Error ? error.message : 'Error desconocido',
+          });
         }
       },
     });
@@ -335,8 +339,10 @@ export function TournamentView({ tournament, onBack }: TournamentViewProps) {
           description: score1 !== undefined && score2 !== undefined ? `Marcador: ${score1} - ${score2}` : undefined,
         });
       }
-    } catch {
-      toast.error('Error al actualizar partido');
+    } catch (error) {
+      toast.error('Error al actualizar partido', {
+        description: error instanceof Error ? error.message : 'Error desconocido',
+      });
     }
   }, [advanceMatch, tournament.id, tournament.matches, tournament.participants]);
 

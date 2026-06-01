@@ -22,7 +22,7 @@ const { chromium } = require('playwright');
     await page.click('text=Siguiente');
 
     console.log('Clic en Crear Torneo...');
-    await page.click('text=Crear Torneo');
+    await page.click('role=dialog >> text=Crear Torneo');
 
     // Wait a bit to observe consequences
     await page.waitForTimeout(3000);

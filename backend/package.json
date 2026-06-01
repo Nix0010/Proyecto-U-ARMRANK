@@ -5,12 +5,17 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:registry": "tsx watch src/services/rpc-core/registry.ts",
+    "dev:engine": "tsx watch src/services/rpc-core/engine.ts",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:registry\" \"npm run dev:engine\"",
     "build": "tsc",
     "start": "node dist/index.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:seed": "prisma db seed",
+    "test": "vitest run"
   },
   "dependencies": {
     "@prisma/client": "5.22.0",
@@ -31,9 +36,16 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^20.11.0",
+    "@types/supertest": "^7.2.0",
     "@types/uuid": "^9.0.8",
+    "concurrently": "^9.2.1",
     "prisma": "^5.10.0",
+    "supertest": "^7.2.2",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^4.1.7"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }
