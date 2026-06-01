@@ -32,12 +32,6 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Verificar si se ejecuta como root
-if [[ $EUID -eq 0 ]]; then
-   print_error "No ejecutes este script como root. Usa un usuario con sudo."
-   exit 1
-fi
-
 # 1. Instalar dependencias del sistema
 print_status "Instalando dependencias del sistema..."
 sudo apt update
